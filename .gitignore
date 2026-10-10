@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# IDE / Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore all generated clean data and raw data (PII)
+data/clean/
+data/mplads_360_master.csv
+data/ml_features.csv
+data/anomaly_scores.csv
+data/clean_*.csv
+data/raw/*.csv
