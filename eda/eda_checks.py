@@ -169,13 +169,15 @@ if "House" in mp.columns and "Hon'ble Members of Parliament" in sanc.columns:
 
     names = {norm(x) for x in sanc["Hon'ble Members of Parliament"].dropna()}
     if "MP Name" in mp.columns:
+        ls_names = set(mp.loc[mp.House == "Lok Sabha", "MP Name"].map(norm))
         rs = mp.loc[mp.House == "Rajya Sabha", "MP Name"].map(norm)
-        found = int(rs.isin(names).sum())
-        if found == 0:
-            result("warn", f"Files cover Lok Sabha only; {len(rs)} Rajya Sabha MPs in summary have no rows",
-                   "Download the Rajya Sabha exports to cover all MPs.")
+        rs = rs[~rs.isin(ls_names)]  # ambiguous names can't prove coverage
+        cov = rs.isin(names).mean()
+        if cov >= 0.90:
+            result("pass", f"{cov:.0%} of Rajya Sabha MPs present in the data")
         else:
-            result("pass", f"{found}/{len(rs)} Rajya Sabha MPs present in the data")
+            result("warn", f"Rajya Sabha coverage {cov:.0%} (Lok Sabha only)",
+                   "Download the Rajya Sabha exports to cover all MPs.")
 
 
 
