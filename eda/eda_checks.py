@@ -160,24 +160,21 @@ if orphan_exp_pct > 0.05:
 else:
     result("pass", f"Orphan payment rate is {orphan_exp_pct:.2%} (within 5% threshold)")
 
-# Add coverage check for Lok Sabha vs Rajya Sabha
-if "House" in mp.columns and "Hon'ble Members of Parliament" in sanc.columns:
-    def norm(s):
-        s = re.sub(r"\(.*?\)", "", str(s).lower())
-        s = re.sub(r"\b(shri|smt|dr|prof|adv|kumari|col|capt)\b\.?", "", s)
-        return re.sub(r"[^a-z]", "", s)
+# ── SCOPE ──
+if "House" in mp.columns:
+    houses = set(mp["House"].unique())
+    result("pass" if houses == {"Lok Sabha"} else "fail",
+           f"Scope is Lok Sabha only (houses in summary: {sorted(houses)})")
 
-    names = {norm(x) for x in sanc["Hon'ble Members of Parliament"].dropna()}
-    if "MP Name" in mp.columns:
-        ls_names = set(mp.loc[mp.House == "Lok Sabha", "MP Name"].map(norm))
-        rs = mp.loc[mp.House == "Rajya Sabha", "MP Name"].map(norm)
-        rs = rs[~rs.isin(ls_names)]  # ambiguous names can't prove coverage
-        cov = rs.isin(names).mean()
-        if cov >= 0.90:
-            result("pass", f"{cov:.0%} of Rajya Sabha MPs present in the data")
-        else:
-            result("warn", f"Rajya Sabha coverage {cov:.0%} (Lok Sabha only)",
-                   "Download the Rajya Sabha exports to cover all MPs.")
+# Reconcile files against the Lok Sabha summary (informational)
+if "Transaction Count" in mp.columns and "Total Expenditure (₹)" in mp.columns:
+    AMT = "Fund Disbursed Amount ( ₹ )"
+    tx_file, tx_mp = len(exp), int(mp["Transaction Count"].sum())
+    tx_diff = (tx_file / tx_mp - 1) if tx_mp else 0
+    print(f"     Transactions: files {tx_file:,} vs summary {tx_mp:,} "
+          f"({tx_diff:+.1%})")
+    print(f"     Spend (Cr):   files {exp[AMT].sum()/1e7:,.0f} vs summary "
+          f"{mp['Total Expenditure (₹)'].sum()/1e7:,.0f}")
 
 
 

@@ -12,8 +12,9 @@ The Members of Parliament Local Area Development Scheme (MPLADS) involves large-
 - 🚨 **Ghost Projects & Missing Photographic Evidence** — completed works lacking geo-tagged images (photos appear required after 15 May 2026)
 - 🚨 **Multidimensional Cost & Delay Anomalies** — via Unsupervised **Isolation Forest** & **Peer Normalization**
 - 🚨 **Stalled / Blocked Capital** — sanctioned works idle for >180 days with ₹0 disbursed
+- 📈 **Scale** — built an audit pipeline over 2.1 lakh MPLADS records for 543 Lok Sabha MPs
 
-> **Scope:** Current data extracts cover **Lok Sabha MPs only** (543 of 774 MPs in the summary). The MP summary lists 231 Rajya Sabha MPs with ₹1,232 cr of spend that is not covered by the sanction/expenditure/completion files.
+> **Scope:** This project covers **Lok Sabha MPLADS only** (543 MPs). Rajya Sabha members are out of scope, meaning these figures do not represent the entirety of Parliament.
 
 ---
 

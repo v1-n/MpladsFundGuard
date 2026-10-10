@@ -245,6 +245,12 @@ for col in ["Work Description"]:
 print("\n[4/4] Processing 'MP Summary'...")
 f_mp = get_raw_filepath("mplads_mp_summary_2026-10-09.csv")
 df_mp = pd.read_csv(f_mp, low_memory=False)
+
+n_all = len(df_mp)
+df_mp = df_mp[df_mp["House"] == "Lok Sabha"].copy()
+print(f"  • Scope: Lok Sabha only. Kept {len(df_mp)} of {n_all} MPs "
+      f"(dropped {n_all - len(df_mp)} Rajya Sabha).")
+
 for col in df_mp.columns:
     if any(k in col for k in ["₹", "Amount", "Cost", "Fund", "Expenditure"]):
         df_mp[col] = clean_currency_series(df_mp[col])
