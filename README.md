@@ -135,12 +135,13 @@ Because no ground-truth fraud labels exist in public procurement datasets, the m
 1. **Stratified Scoring Architecture:** Works are split into separate Completed (36,989) and In-Progress (21,061) cohorts to avoid duration and partial-spend confounding.
 2. **Fine-Grained Peer Benchmarks:** Costs are benchmarked against the median for specific `[Work, State]` pairs (91.6% tier 1, 8.0% national work tier 2, 0.4% global fallback).
 3. **Run-to-Run Stability:** 10-seed ensemble averaging with `max_samples=1024` achieves a **0.9355 Jaccard overlap** on Completed works and **0.9672** on In-Progress works for the top-300 works across independent seed ensembles.
-4. **Synthetic Outlier Injection Benchmark (5 Independent Trials):** Tested against 300 planted multi-dimensional anomalies (cost surges, vendor fragmentation, timeline anomalies):
-   - **Isolation Forest:** ROC-AUC **0.864 ± 0.008** | Precision@2% **6.7% ± 0.6%** | Recall@2% **16.5% ± 1.4%** (Type A Cost: 8.4%, Type B Count: 39.2%, Type C Timeline: 1.8%).
-   - **Robust Z-Score Baseline:** ROC-AUC **0.784 ± 0.005** | Precision@2% **5.5% ± 1.2%** | Recall@2% **13.7% ± 2.9%** (Type A Cost: 12.4%, Type B Count: 27.0%, Type C Timeline: 1.6%).
-   - *Note on Timeline Recall:* Both models achieve ~1.8% recall on injected timeline compression because single-feature values (0-day payment lag, 1-day sanction approval) already appear naturally in 3–4% of legitimate works.
-5. **Clean Data Baseline Agreement:** Top-300 works share **64.7% overlap (194/300)** with non-parametric Robust Z-Scores on clean untouched data, confirming the model captures both single-variable spikes and multi-feature interactions.
-6. **Interpretability & De-biased Blind Audit:** Top anomalies are tagged with extreme feature indicators (≥98th percentile), and an unlabelled 100-work blind audit sheet (political and regional identifiers removed) is exported to `data/clean/manual_audit_sample_blind.csv` with a structured rubric.
+4. **Synthetic Outlier Injection Benchmark (5 Independent Held-Out Trials):** Evaluated strictly on a 70% clean train / 30% held-out test split with 300 planted multi-dimensional anomalies (cost surges, vendor fragmentation, timeline anomalies):
+   - **Isolation Forest:** ROC-AUC **0.870 ± 0.004** | Precision@2% **19.9% ± 2.3%** | Recall@2% **14.7% ± 1.7%** (Type A Cost: 9.0%, Type B Count: 33.4%, Type C Timeline: 1.6%).
+   - **Robust Z-Score Baseline:** ROC-AUC **0.790 ± 0.011** | Precision@2% **16.5% ± 1.5%** | Recall@2% **12.1% ± 1.1%** (Type A Cost: 7.8%, Type B Count: 27.0%, Type C Timeline: 1.6%).
+   - *Base Rate Context:* The injected test base rate is 2.7%; Precision@2% of 19.9% represents a **~7.4× lift over random guessing**.
+   - *Timeline Limitation:* Both models show low recall (~1.6%) on injected timeline compression because single-feature values (0-day payment lag, 1-day approval) already appear naturally in 3–4% of legitimate works.
+5. **Clean Data Baseline Agreement:** Top-300 works share **64.7% overlap (194/300)** with non-parametric Robust Z-Scores on clean untouched data. The two methods rank ~35% of their top works differently, reflecting different sensitivity to multi-variable geometry versus marginal extremes.
+6. **Interpretability & De-biased Blind Audit:** Top anomalies are tagged with extreme feature indicators (≥98th percentile). A de-biased 100-work blind audit sheet (100 distinct works, political and regional identifiers removed) is exported to `data/clean/manual_audit_sample_blind.csv` alongside a standardized audit rubric in `data/clean/manual_audit_rubric.md` (classifying works as *Routine*, *Needs document check*, or *Inconsistent data*).
 
 ---
 
