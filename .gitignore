@@ -43,3 +43,7 @@ data/ml_features.csv
 data/anomaly_scores.csv
 data/clean_*.csv
 data/raw/*.csv
+
+
+# learing file
+src/learning-iolation.py
