@@ -129,15 +129,18 @@ python3 src/evaluate_model.py
 - **21 Post-Cutoff Missing Photos** — completions after 15 May 2026 lacking photo proof (photos appear required after that date; 9,279 earlier completions predate the requirement)
 - **10,687 Stalled Unpaid** — sanctioned >180 days ago with zero payments
 
-### ML Anomaly Scoring & Evaluation
-Because no ground-truth fraud labels exist in public procurement datasets, the model is evaluated via **reproducibility, synthetic outlier injection, baseline benchmarking, and blind human review**:
+### ML Anomaly Scoring & Synthetic Benchmark
+Because no ground-truth fraud labels exist in public procurement datasets, the model is evaluated via **reproducibility across random seeds, controlled synthetic outlier injection, non-parametric baseline comparison, and blind human review**:
 
-1. **Stratified Scoring Architecture:** Works are split into separate Completed (36,989) and In-Progress (21,061) cohorts to prevent duration and partial-spend confounding.
-2. **Fine-Grained Peer Benchmarks:** Costs are benchmarked against the median for the specific `[Work, State]` category (with national fallback), achieving 100% peer coverage without relying on broad categories.
-3. **Run-to-Run Stability:** 10-seed ensemble averaging with `max_samples=1024` achieves a **0.9355 Jaccard overlap** for the top-300 works across independent runs.
-4. **Synthetic Anomaly Injection:** Evaluated on 300 planted multi-dimensional outliers (cost surges, vendor fragmentation, timeline anomalies), achieving an **ROC-AUC of 0.856** (compared to 0.764 for a single-variable Robust Z-Score baseline).
-5. **Baseline Agreement:** Top-300 works share 47.3% overlap with non-parametric Robust Z-scores (Median/MAD), confirming the Isolation Forest captures both single-feature spikes and complex multi-feature interactions.
-6. **Interpretability & Blind Audit:** Top anomalies are annotated with human-readable primary drivers (e.g. *Extreme cost relative to peer group ≥98th pct*), and an unlabelled 100-work blind audit sheet is exported to `data/clean/manual_audit_sample_blind.csv` for human review.
+1. **Stratified Scoring Architecture:** Works are split into separate Completed (36,989) and In-Progress (21,061) cohorts to avoid duration and partial-spend confounding.
+2. **Fine-Grained Peer Benchmarks:** Costs are benchmarked against the median for specific `[Work, State]` pairs (91.6% tier 1, 8.0% national work tier 2, 0.4% global fallback).
+3. **Run-to-Run Stability:** 10-seed ensemble averaging with `max_samples=1024` achieves a **0.9355 Jaccard overlap** on Completed works and **0.9672** on In-Progress works for the top-300 works across independent seed ensembles.
+4. **Synthetic Outlier Injection Benchmark (5 Independent Trials):** Tested against 300 planted multi-dimensional anomalies (cost surges, vendor fragmentation, timeline anomalies):
+   - **Isolation Forest:** ROC-AUC **0.864 ± 0.008** | Precision@2% **6.7% ± 0.6%** | Recall@2% **16.5% ± 1.4%** (Type A Cost: 8.4%, Type B Count: 39.2%, Type C Timeline: 1.8%).
+   - **Robust Z-Score Baseline:** ROC-AUC **0.784 ± 0.005** | Precision@2% **5.5% ± 1.2%** | Recall@2% **13.7% ± 2.9%** (Type A Cost: 12.4%, Type B Count: 27.0%, Type C Timeline: 1.6%).
+   - *Note on Timeline Recall:* Both models achieve ~1.8% recall on injected timeline compression because single-feature values (0-day payment lag, 1-day sanction approval) already appear naturally in 3–4% of legitimate works.
+5. **Clean Data Baseline Agreement:** Top-300 works share **64.7% overlap (194/300)** with non-parametric Robust Z-Scores on clean untouched data, confirming the model captures both single-variable spikes and multi-feature interactions.
+6. **Interpretability & De-biased Blind Audit:** Top anomalies are tagged with extreme feature indicators (≥98th percentile), and an unlabelled 100-work blind audit sheet (political and regional identifiers removed) is exported to `data/clean/manual_audit_sample_blind.csv` with a structured rubric.
 
 ---
 

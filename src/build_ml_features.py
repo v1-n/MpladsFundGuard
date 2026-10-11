@@ -34,26 +34,41 @@ df = pd.read_csv(master_path, low_memory=False)
 print(f"Loaded Master Dataset: {len(df):,} total works.")
 
 # 2. Filter Scored Cohort (Works with settled payments)
+n_total = len(df)
+n_sanctioned = len(df[df.Is_Sanctioned == 1])
+n_sanc_unpaid = len(df[(df.Is_Sanctioned == 1) & (df.Has_Payments == 0)])
 all_paying = df[(df.Is_Sanctioned == 1) & (df.Has_Payments == 1) & (df.Sanction_Amount > 0)].copy()
 base = all_paying[all_paying.Total_Exp_Settled > 0].copy()
-excluded = len(all_paying) - len(base)
-print(f"Active Scored Cohort: {len(base):,} works (excluded {excluded:,} pending-only works).")
+n_pending_only = len(all_paying) - len(base)
+
+print(f"Scoring Cohort Accounting:")
+print(f"  • Total works in master:                      {n_total:,}")
+print(f"  • Excluded (Sanctioned, 0 payment records):   {n_sanc_unpaid:,}")
+print(f"  • Payment-record works:                       {len(all_paying):,}")
+print(f"  • Excluded (Payment works with 0 settled):    {n_pending_only:,} (pending-only)")
+print(f"  • Active Scored Cohort:                       {len(base):,} works.")
 
 # 3. Fine-Grained Peer Normalization (Work type + State with national fallback)
-def peer_median(keys, min_n=20):
+def peer_median_tier(keys, min_n=20):
     g = base.groupby(keys)["Total_Exp_Settled"]
     return g.transform("median").where(g.transform("size") >= min_n)
 
-pm = (
-    peer_median(["Work", "State"])
-    .fillna(peer_median(["Work"]))
-    .fillna(base["Total_Exp_Settled"].median())
-)
+tier1 = peer_median_tier(["Work", "State"], min_n=20)
+tier2 = peer_median_tier(["Work"], min_n=20)
+tier3 = base["Total_Exp_Settled"].median()
+
+n_t1 = tier1.notna().sum()
+n_t2 = (tier1.isna() & tier2.notna()).sum()
+n_t3 = (tier1.isna() & tier2.isna()).sum()
+
+pm = tier1.fillna(tier2).fillna(tier3)
 base["peer_median_settled"] = pm
 base["paid_vs_peer_log"] = np.log1p(base.Total_Exp_Settled) - np.log1p(pm)
 
-unbenchmarked = base["paid_vs_peer_log"].isna().sum()
-print(f"Peer benchmark coverage: {len(base) - unbenchmarked:,} / {len(base):,} works ({1 - unbenchmarked/len(base):.2%}).")
+print(f"Peer Benchmark Breakdown:")
+print(f"  • Tier 1 (Same Work type & State, n≥20):     {n_t1:>6,} ({n_t1/len(base):>5.1%})")
+print(f"  • Tier 2 (National Work type median, n≥20):  {n_t2:>6,} ({n_t2/len(base):>5.1%})")
+print(f"  • Tier 3 (Global national fallback):          {n_t3:>6,} ({n_t3/len(base):>5.1%})")
 
 # 4. Feature Engineering
 # Common features across all works (Note: log_paid is dropped due to 0.98 correlation with log_sanction)
@@ -153,17 +168,17 @@ def explain_anomalies(df_stage, cols):
         explanations.append("; ".join(reasons[:3]))
     return explanations
 
-base["top_anomalous_factors"] = ""
+base["extreme_feature_indicators"] = ""
 for stage_name, (mask, cols) in stages.items():
     idx = base[mask].index
-    base.loc[idx, "top_anomalous_factors"] = explain_anomalies(base.loc[idx], cols)
+    base.loc[idx, "extreme_feature_indicators"] = explain_anomalies(base.loc[idx], cols)
 
 # 7. Export Anomaly Rankings
 flags = [c for c in df.columns if c.startswith("Flag_") or c.startswith("Missing_")]
 base["n_rule_flags"] = base[flags].sum(axis=1)
 
 out_cols = [
-    "Work ID", "Stage", "rank_in_stage", "anomaly_score", "top_anomalous_factors",
+    "Work ID", "Stage", "rank_in_stage", "anomaly_score", "extreme_feature_indicators",
     "State", "Constituency", "Hon'ble Members of Parliament", "Work",
     "Sanction_Amount", "Total_Exp_Settled", "Total_Exp_In_Progress", "paid_vs_peer_log",
     "n_rule_flags"
@@ -180,7 +195,7 @@ print("=" * 85)
 top_comp = base[base.Stage == "Completed"].sort_values("rank_in_stage").head(5)
 for _, r in top_comp.iterrows():
     print(f"#{int(r.rank_in_stage):03d} | {r['Work ID']} | {r['State']} | Sanction: ₹{r['Sanction_Amount']:,.0f} | Paid: ₹{r['Total_Exp_Settled']:,.0f}")
-    print(f"     Drivers: {r['top_anomalous_factors']}\n")
+    print(f"     Extreme feature indicators: {r['extreme_feature_indicators']}\n")
 
 print("=" * 85)
 print("     TOP 5 MOST ANOMALOUS IN-PROGRESS WORKS")
@@ -188,7 +203,7 @@ print("=" * 85)
 top_prog = base[base.Stage == "In-Progress"].sort_values("rank_in_stage").head(5)
 for _, r in top_prog.iterrows():
     print(f"#{int(r.rank_in_stage):03d} | {r['Work ID']} | {r['State']} | Sanction: ₹{r['Sanction_Amount']:,.0f} | Paid: ₹{r['Total_Exp_Settled']:,.0f}")
-    print(f"     Drivers: {r['top_anomalous_factors']}\n")
+    print(f"     Extreme feature indicators: {r['extreme_feature_indicators']}\n")
 
 print("=" * 85)
 print("     EXPLORATORY RULE-FLAG OVERLAP (TOP-300 PER STAGE)")
