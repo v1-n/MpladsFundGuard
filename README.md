@@ -6,13 +6,12 @@
 ---
 
 ## 📌 Overview
-The Members of Parliament Local Area Development Scheme (MPLADS) involves large-scale fund utilization and execution of thousands of civic works. **MpladsFundGuard** is an end-to-end AI and forensic data analytics platform designed to detect:
+The Members of Parliament Local Area Development Scheme (MPLADS) involves large-scale fund utilization across thousands of civic projects. **MpladsFundGuard** is an end-to-end data analytics and forensic audit platform covering 2.1 lakh records across 543 Lok Sabha MPs, designed to detect:
 - 🚨 **Duplicate Payments & Double Billing** — identical [Work ID + Vendor + Amount + Date] rows in the ledger
 - 🚨 **Same-Day Bulk Payments** — 8+ near-equal payments to one vendor on the same day, all ≤₹5L
-- 🚨 **Ghost Projects & Missing Photographic Evidence** — completed works lacking geo-tagged images (photos appear required after 15 May 2026)
+- 🚨 **Ghost Projects & Missing Photographic Evidence** — completed works lacking completion images (photos appear required after 15 May 2026)
 - 🚨 **Multidimensional Cost & Delay Anomalies** — via Unsupervised **Isolation Forest** & **Peer Normalization**
 - 🚨 **Stalled / Blocked Capital** — sanctioned works idle for >180 days with ₹0 disbursed
-- 📈 **Scale** — built an audit pipeline over 2.1 lakh MPLADS records for 543 Lok Sabha MPs
 
 > **Scope:** This project covers **Lok Sabha MPLADS only** (543 MPs). Rajya Sabha members are out of scope, meaning these figures do not represent the entirety of Parliament.
 
@@ -143,7 +142,7 @@ Because no ground-truth fraud labels exist, the model is evaluated via **reprodu
    - *Base Rate Context:* The injected test base rate is 2.7%; Precision@2% of 19.9% represents a **~7.4× lift over random guessing**. The IF gain over the Robust Z-Score baseline is modest.
    - *Timeline Limitation:* Both models show low recall (~1.6%) on injected timeline compression because single-feature values (0-day payment lag, 1-day approval) already appear naturally in 3–4% of legitimate works.
 5. **Clean Data Baseline Agreement:** Top-300 works share **64.7% overlap (194/300)** with non-parametric Robust Z-Scores on clean untouched data. The two methods rank ~35% of their top works differently, reflecting different sensitivity to multi-variable geometry versus marginal extremes.
-6. **Matched-Control Blind Audit:** A blind audit sheet pairs top-ranked works against **matched controls** (non-flagged works with similar installment counts, vendor counts, and budget) to test whether the model surfaces information beyond payment fragmentation. Reviewers are directed to verify works against the [MPLADS Portal](https://www.mplads.gov.in/), completion photos, and vendor records — not model-input features. No audit precision is claimed until human labels are collected.
+6. **Matched-Control Blind Audit:** Top-50 ranked works are compared against fragmentation-similar works ranked below 300 (median 11 installments vs 23 for the top 50). The match is imperfect because the ranking mostly reflects payment fragmentation, and the model places nearly all heavily fragmented works in its top tier. Reviewers are directed to verify works against the [MPLADS Portal](https://www.mplads.gov.in/), completion images, and vendor records rather than model features. With a sample of 50 vs 50, only moderate-to-large differences are detectable, and no audit precision is claimed until human labels are collected.
 
 ---
 

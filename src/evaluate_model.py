@@ -216,12 +216,12 @@ top_50 = comp_works.sort_values("rank_in_stage").head(50).copy()
 top_50["Cohort"] = "Top_Ranked"
 top_50_ids = set(top_50["Work ID"])
 
-# Build MATCHED CONTROLS: for each top-50 work, find a non-top work with the closest
-# profile in Settled_Count, Unique_Vendors_Count, and Sanction_Amount.
-# This tests whether the model surfaces genuine signals beyond simply counting installments/vendors.
+# Build MATCHED CONTROLS: draw strictly from works ranked below 300 to test whether
+# the model surfaces genuine signals beyond payment fragmentation.
+# (The model places nearly all heavily fragmented works in the top ~300).
 from sklearn.preprocessing import StandardScaler
 
-non_top = comp_works[~comp_works["Work ID"].isin(top_50_ids)].copy().reset_index(drop=True)
+non_top = comp_works[comp_works.rank_in_stage > 300].copy().reset_index(drop=True)
 
 match_cols = ["Settled_Count", "Unique_Vendors_Count", "Sanction_Amount"]
 scaler = StandardScaler()
@@ -244,16 +244,20 @@ for i in range(len(top_50)):
 matched_df = non_top.iloc[matched_indices].copy()
 matched_df["Cohort"] = "Matched_Control"
 n_matched = len(matched_df)
-print(f"  • Matched controls found: {n_matched} / 50 (nearest-neighbor profile on installments, vendors, and cost)")
+
+smd = (top_50[match_cols].mean() - matched_df[match_cols].mean()) / top_50[match_cols].std()
+
+print(f"  • Matched controls found: {n_matched} / 50 (nearest-neighbor from rank > 300)")
 print(f"    - Top 50 medians  : {top_50.Settled_Count.median():.0f} installments, {top_50.Unique_Vendors_Count.median():.0f} vendors, ₹{top_50.Sanction_Amount.median():,.0f} budget")
 print(f"    - Control medians : {matched_df.Settled_Count.median():.0f} installments, {matched_df.Unique_Vendors_Count.median():.0f} vendors, ₹{matched_df.Sanction_Amount.median():,.0f} budget")
+print(f"    - Standardized mean difference: {smd.round(2).to_dict()}")
 
 # Combine and shuffle
 sample = pd.concat([top_50, matched_df]).sample(frac=1.0, random_state=123).reset_index(drop=True)
 
 # The audit sheet should NOT contain model-input features (installments, vendors, amounts).
-# Instead, provide only Work ID and description, and instruct reviewers to verify
-# against the MPLADS portal, completion photos, and vendor records.
+# Instead, provide only Work ID, description, State, and Constituency, and instruct reviewers
+# to verify against the MPLADS portal, completion images, and vendor records.
 audit_export = sample[[
     "Work ID", "Work", "State", "Constituency"
 ]].copy()
@@ -261,10 +265,11 @@ audit_export["Portal_URL"] = "https://www.mplads.gov.in/"
 audit_export["Audit_Verdict"] = ""  # Options: Routine | Needs document check | Inconsistent data
 audit_export["Auditor_Notes"] = ""
 
-# Assert distinctness
+# Assert distinctness and separation
 assert n_matched == 50, f"Expected 50 matched controls, found {n_matched}"
 assert len(audit_export) == 100, f"Expected 100 audit works, found {len(audit_export)}"
 assert audit_export["Work ID"].nunique() == 100, "Duplicate Work IDs found in audit sample"
+assert matched_df.rank_in_stage.min() > 300, f"Controls must rank > 300, found min {matched_df.rank_in_stage.min()}"
 
 out_sample_file = CLEAN_DIR / "manual_audit_sample_blind.csv"
 audit_export.to_csv(out_sample_file, index=False)
@@ -288,11 +293,16 @@ an unbiased audit.
 
 For each Work ID in the sheet:
 
-1. **Look up the work on the [MPLADS Portal](https://www.mplads.gov.in/)** using the Work ID.
-2. **Check the completion photo** (if available): Does it show a plausible finished structure
+1. **Locate the project records on the [MPLADS Portal](https://www.mplads.gov.in/)**:
+   - Go to `mplads.gov.in` public dashboards / reports.
+   - Filter by the project's **State** and **Constituency** (provided in the audit sheet).
+   - Search or filter for the specific **Work ID** (e.g. `WS/MP...`). If portal direct search
+     is temporarily restricted, cross-reference against the district's public administrative
+     sanction register and expenditure ledger.
+2. **Check the completion image** (if available): Does it show a plausible finished structure
    matching the work description?
-3. **Check the vendor names**: Are there repeated or suspiciously similar vendor names?
-   Are vendor names plausible for the type of work?
+3. **Check the vendor names**: Are there repeated, suspiciously generic, or conflicting vendor names?
+   Are vendor entities plausible for the type of work?
 4. **Check the payment timeline**: Do the payment dates look reasonable for the type of
    construction described?
 5. **Cross-reference the work description** against the reported cost and location.
@@ -300,33 +310,36 @@ For each Work ID in the sheet:
 ## Classification Categories
 
 ### 1. `Routine`
-- The portal page, photos, vendor names, and payment timeline are all consistent with a
+- The portal page, completion images, vendor names, and payment timeline are all consistent with a
   standard civic works project.
-- Nothing unusual stands out from the external records.
+- Execution duration is within standard construction windows (≤365 days for typical scope).
+- Nothing unusual stands out from external records.
 
 ### 2. `Needs document check`
-- The portal page or photos raise a question that can't be resolved without reviewing the
-  original Administrative Sanction order or physical inspection report.
-- Examples: no completion photo despite reported completion; vendor name appears generic
-  or repeated across multiple works; cost seems disproportionate for the described scope;
-  work description is vague (e.g. "Misc. works").
+- The portal page, images, or records raise a question that cannot be resolved without reviewing
+  the original Administrative Sanction order, contract, or physical inspection report.
+- Examples: no completion image despite reported completion; vendor name appears generic
+  or repeated across multiple unrelated works; work description is vague (e.g. "Misc. works");
+  cost seems disproportionate for the described scope.
 - Execution duration is outside typical construction windows (<7 days or >365 days for
   the described scope), warranting verification.
 
 ### 3. `Inconsistent data`
-- The portal records contain clear contradictions or implausible entries.
-- Examples: completion date precedes sanction date; full disbursement with 0-day duration;
-  the described physical scope (e.g. "Installation of 1 handpump") does not match the
-  reported cost; work description and location do not match the MP's constituency.
+- Clear data contradictions, chronological impossibilities, or administrative discrepancies.
+- Examples: completion date precedes sanction date; full disbursement recorded with 0-day duration;
+  the described physical scope (e.g. "Installation of 1 handpump") does not match the reported cost;
+  work description and location do not match the MP's constituency.
 
 ## Important Notes
 
 - **Do not use payment counts, vendor counts, or amounts as primary classification signals.**
   These features are already captured by the model; judging by them would be circular.
-- **Use external information** (portal page, photos, vendor names, dates) to form your verdict.
-- The sample contains both model-flagged works and matched controls with similar payment
-  profiles. Your job is to determine whether flagged works differ from their controls on
-  evidence visible only from external records.
+- **Use external information** (portal page, images, vendor names, dates) to form your verdict.
+- **Sample and Matching Context:** Top-50 ranked works are matched against controls ranked below 300
+  (median 11 installments vs 23 for top 50). The match is imperfect because the ranking mostly
+  reflects payment fragmentation.
+- **Statistical Power:** With a sample of 50 vs 50, only moderate-to-large differences between
+  the cohorts are detectable. Interpret small differences with care.
 """)
 
 print(f"  ✓ Exported {len(audit_export)} unique works (matched-control design) -> {out_sample_file}")
