@@ -1,6 +1,7 @@
 """
 Metric grid and KPI card components for MPLADS FundGuard.
 Provides consistent glassmorphic metric cards across all dashboard pages.
+Uses zero-indent single-block HTML strings to avoid Markdown code-block interpretation.
 """
 
 import html
@@ -33,15 +34,15 @@ def render_metric_card_html(
         b_cls = cls_map.get(badge_variant, "badge-neutral")
         badge_html = f'<span class="{b_cls}" style="float: right;">{html.escape(str(badge))}</span>'
 
-    return f"""
-    <div class="kpi-card">
-        <div>
-            <div class="kpi-label">{safe_label}{badge_html}</div>
-            <div class="kpi-value">{safe_val}</div>
-        </div>
-        {sub_html}
-    </div>
-    """
+    return (
+        f'<div class="kpi-card">'
+        f'<div>'
+        f'<div class="kpi-label">{safe_label}{badge_html}</div>'
+        f'<div class="kpi-value">{safe_val}</div>'
+        f'</div>'
+        f'{sub_html}'
+        f'</div>'
+    )
 
 
 def metric_grid(items: list[dict[str, Any]], cols: int = 4) -> None:
@@ -52,7 +53,6 @@ def metric_grid(items: list[dict[str, Any]], cols: int = 4) -> None:
     if not items:
         return
 
-    # Split into chunks of `cols`
     for i in range(0, len(items), cols):
         chunk = items[i : i + cols]
         row_cols = st.columns(cols)

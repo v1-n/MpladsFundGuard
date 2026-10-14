@@ -1,6 +1,7 @@
 """
 Pipeline tracker component for MPLADS FundGuard.
 Visualizes the 8 display-only methodology steps of the screening architecture.
+Uses zero-indent single-block HTML strings to avoid Markdown code-block interpretation.
 """
 
 import html
@@ -48,18 +49,12 @@ def pipeline_tracker(steps: Optional[list[dict[str, Any]]] = None) -> None:
             color = "#9CA3AF"
             border = "rgba(255, 255, 255, 0.08)"
 
-        html_box = f"""
-        <div style="background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 0.6rem 0.5rem; text-align: center; height: 100%;">
-            <div style="font-size: 0.75rem; font-weight: 700; color: {color}; margin-bottom: 0.2rem;">
-                {icon} Step {num}
-            </div>
-            <div style="font-size: 0.78rem; font-weight: 600; color: #E8EDF5; line-height: 1.2;">
-                {name}
-            </div>
-            <div style="font-size: 0.7rem; color: #9CA3AF; margin-top: 0.25rem;">
-                {desc}
-            </div>
-        </div>
-        """
+        html_box = (
+            f'<div style="background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 0.6rem 0.5rem; text-align: center; height: 100%;">'
+            f'<div style="font-size: 0.75rem; font-weight: 700; color: {color}; margin-bottom: 0.2rem;">{icon} Step {num}</div>'
+            f'<div style="font-size: 0.78rem; font-weight: 600; color: #E8EDF5; line-height: 1.2;">{name}</div>'
+            f'<div style="font-size: 0.7rem; color: #9CA3AF; margin-top: 0.25rem;">{desc}</div>'
+            f'</div>'
+        )
         with cols[i]:
             st.markdown(html_box, unsafe_allow_html=True)
