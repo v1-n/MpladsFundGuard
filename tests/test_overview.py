@@ -14,8 +14,12 @@ def test_overview_endpoint(client):
     assert data["total_sanctioned_amount"] > 0
     assert data["total_settled_expenditure"] > 0
     assert 0 <= data["overall_utilization_ratio"] <= 1.0
+    assert data["remaining_unspent_amount"] >= 0
     
-    # Assert integrity checks present
+    # Assert evidence-based integrity checks present
     assert "integrity_checks" in data
     assert data["integrity_checks"]["orphan_payments"] == 0
-    assert data["integrity_checks"]["status"] == "PASS"
+    assert data["integrity_checks"]["status"] in ["PASS", "WARN", "NOT VERIFIED"]
+    
+    # Assert provenance info
+    assert "data_provenance" in data

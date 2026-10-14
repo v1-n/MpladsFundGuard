@@ -70,14 +70,27 @@ with tab2:
     with fcol1:
         flag_type_opt = st.selectbox(
             "Filter by Rule Flag",
-            options=["all", "duplicate_payment", "same_day_bulk", "ghost_completion", "stalled_unpaid", "missing_photo"],
+            options=[
+                "all",
+                "duplicate_payment",
+                "same_day_bulk",
+                "ghost_completion",
+                "stalled_unpaid",
+                "missing_photo",
+                "orphan_payment",
+                "cost_cap",
+                "date_sequence",
+            ],
             format_func=lambda x: {
-                "all": "All Rule-Flagged Works",
+                "all": "All Rule-Flagged Works (8 Rules)",
                 "duplicate_payment": "Duplicate Payment Rows",
                 "same_day_bulk": "Same-Day Bulk Payments (≥8 works)",
                 "ghost_completion": "Ghost Completions (₹0 Settled)",
                 "stalled_unpaid": "Stalled Unpaid (>180 Days)",
-                "missing_photo": "Missing Photo Proof (Post-May 2026)"
+                "missing_photo": "Missing Photo Proof (Post-May 2026)",
+                "orphan_payment": "Orphan Payments (No Sanction Order)",
+                "cost_cap": "Cost Cap Violations (>1% over sanction)",
+                "date_sequence": "Date Sequence Violations (Chronological)",
             }[x]
         )
     with fcol2:
@@ -89,7 +102,7 @@ with tab2:
 
     pcol1, pcol2 = st.columns(2)
     with pcol1:
-        page_size = st.selectbox("Page Size", options=[25, 50, 100], index=1)
+        page_size = st.selectbox("Page Size", options=[25, 50, 100, 200], index=1)
     with pcol2:
         page_num = st.number_input("Page Number", min_value=1, value=1, step=1)
 

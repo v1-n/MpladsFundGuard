@@ -1,9 +1,13 @@
-from fastapi import APIRouter
+from typing import Optional
+from fastapi import APIRouter, Query, status
 from backend.app.schemas.common import ResponseEnvelope
 from backend.app.schemas.audit import (
     AuditSampleResponse,
     AuditRubricResponse,
     MatchingDiagnosticsResponse,
+    AuditReviewSubmission,
+    AuditReviewRecord,
+    AuditReviewListResponse,
 )
 from backend.app.services.audit_service import audit_service
 from backend.app.core.config import settings
@@ -29,6 +33,22 @@ def get_audit_rubric():
 @router.get("/diagnostics", response_model=ResponseEnvelope[MatchingDiagnosticsResponse])
 def get_audit_diagnostics():
     data = audit_service.get_audit_diagnostics()
+    return ResponseEnvelope(
+        data=data,
+        meta={"disclaimer": settings.DISCLAIMER}
+    )
+
+@router.post("/reviews", response_model=ResponseEnvelope[AuditReviewRecord], status_code=status.HTTP_201_CREATED)
+def submit_audit_review(submission: AuditReviewSubmission):
+    record = audit_service.submit_review(submission)
+    return ResponseEnvelope(
+        data=record,
+        meta={"message": "Audit review successfully persisted."}
+    )
+
+@router.get("/reviews", response_model=ResponseEnvelope[AuditReviewListResponse])
+def get_audit_reviews(reviewer_id: Optional[str] = Query(None, description="Filter reviews by reviewer ID")):
+    data = audit_service.get_reviews(reviewer_id=reviewer_id)
     return ResponseEnvelope(
         data=data,
         meta={"disclaimer": settings.DISCLAIMER}

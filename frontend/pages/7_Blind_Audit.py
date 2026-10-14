@@ -41,20 +41,24 @@ with tab_audit:
         st.warning("No audit sample available.")
         st.stop()
 
-    # Session state for audit verdicts
-    if "audit_verdicts" not in st.session_state:
-        st.session_state.audit_verdicts = {
-            item["work_id"]: {
-                "verdict": item.get("audit_verdict") or "",
-                "notes": item.get("auditor_notes") or ""
-            }
-            for item in sample_items
-        }
+    # Reviewer Identity for durable persistence
+    col_rev1, col_rev2 = st.columns([1, 2])
+    with col_rev1:
+        reviewer_id = st.text_input("Reviewer ID / Name", value="Auditor-1", help="Used to isolate and persist your review verdicts in backend storage")
+    with col_rev2:
+        st.caption("Verdicts and observations are saved durably to the backend database under this Reviewer ID.")
+
+    # Load previously persisted reviews for this reviewer from backend
+    try:
+        saved_reviews_list = api_client.get_audit_reviews(reviewer_id=reviewer_id)
+        saved_reviews_map = {r["work_id"]: r for r in saved_reviews_list}
+    except Exception:
+        saved_reviews_map = {}
 
     # Progress tracking
-    completed_reviews = sum(1 for v in st.session_state.audit_verdicts.values() if v["verdict"])
+    completed_reviews = len(saved_reviews_map)
     st.progress(completed_reviews / len(sample_items))
-    st.caption(f"**Audit Progress:** {completed_reviews} of {len(sample_items)} works reviewed ({completed_reviews/len(sample_items)*100:.1f}%)")
+    st.caption(f"**Audit Progress for {reviewer_id}:** {completed_reviews} of {len(sample_items)} works reviewed ({completed_reviews/len(sample_items)*100:.1f}%)")
 
     # Select work to review
     work_ids = [item["work_id"] for item in sample_items]
@@ -74,41 +78,54 @@ with tab_audit:
         st.link_button("🔗 Open Official MPLADS Portal", portal_url, help="Cross-reference work status, completion images, and payment bills on the portal")
 
     st.markdown("#### Record Your Audit Verdict")
-    saved = st.session_state.audit_verdicts.get(selected_id, {"verdict": "", "notes": ""})
+    prior_rec = saved_reviews_map.get(selected_id, {})
+    saved_verdict = prior_rec.get("verdict", "")
+    saved_notes = prior_rec.get("notes", "")
 
     verdict_opts = ["", "Normal / Regular", "Irregularity / Suspicious", "Inefficient / Incomplete", "Inconsistent Data"]
-    curr_idx = verdict_opts.index(saved["verdict"]) if saved["verdict"] in verdict_opts else 0
+    curr_idx = verdict_opts.index(saved_verdict) if saved_verdict in verdict_opts else 0
 
     v_col1, v_col2 = st.columns([1, 2])
     with v_col1:
         new_verdict = st.selectbox("Audit Verdict", options=verdict_opts, index=curr_idx, key=f"v_{selected_id}")
     with v_col2:
-        new_notes = st.text_area("Auditor Verification Notes & Observations", value=saved.get("notes", ""), placeholder="e.g. Photo shows finished drain; vendor names verified on portal...", key=f"n_{selected_id}")
+        new_notes = st.text_area("Auditor Verification Notes & Observations", value=saved_notes, placeholder="e.g. Photo shows finished drain; vendor names verified on portal...", key=f"n_{selected_id}")
 
-    if st.button("💾 Save Verdict for this Work", type="primary", key=f"save_{selected_id}"):
-        st.session_state.audit_verdicts[selected_id] = {
-            "verdict": new_verdict,
-            "notes": new_notes
-        }
-        st.success(f"Verdict saved for `{selected_id}`!")
-        st.rerun()
+    if st.button("💾 Persist Verdict to Backend", type="primary", key=f"save_{selected_id}"):
+        if not new_verdict:
+            st.error("Please select a verdict before saving.")
+        else:
+            try:
+                api_client.submit_audit_review(
+                    work_id=selected_id,
+                    reviewer_id=reviewer_id,
+                    verdict=new_verdict,
+                    notes=new_notes
+                )
+                st.success(f"Verdict for `{selected_id}` saved durably under `{reviewer_id}`!")
+                st.rerun()
+            except APIError as e:
+                st.error(f"Error submitting review: {e.message}")
+            except Exception as e:
+                st.error(f"Submission failed: {e}")
 
     st.markdown("---")
-    st.subheader("Review Sample Table & Export")
+    st.subheader(f"Current Review Sheet ({reviewer_id}) & Export")
 
     # Construct review table with current saved verdicts
     table_rows = []
     for item in sample_items:
         wid = item["work_id"]
-        v_info = st.session_state.audit_verdicts.get(wid, {"verdict": "", "notes": ""})
+        v_info = saved_reviews_map.get(wid, {})
         table_rows.append({
             "Work ID": wid,
             "Work Description": item["work"],
             "State": item["state"],
             "Constituency": item["constituency"],
             "Portal URL": item["portal_url"],
-            "Audit Verdict": v_info.get("verdict", ""),
-            "Auditor Notes": v_info.get("notes", "")
+            "Audit Verdict": v_info.get("verdict", "Unreviewed"),
+            "Auditor Notes": v_info.get("notes", ""),
+            "Reviewed At": v_info.get("updated_at", "—")
         })
 
     audit_df = pd.DataFrame(table_rows)
@@ -116,7 +133,7 @@ with tab_audit:
 
     render_csv_download_button(
         df=audit_df,
-        filename="mplads_manual_audit_completed_sheet.csv",
+        filename=f"mplads_manual_audit_{reviewer_id}.csv",
         button_label="📥 Export Audit Sheet with Recorded Verdicts to CSV"
     )
 

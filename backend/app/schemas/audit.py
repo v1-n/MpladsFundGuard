@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class BlindAuditItem(BaseModel):
     work_id: str
@@ -7,8 +7,6 @@ class BlindAuditItem(BaseModel):
     state: str
     constituency: str
     portal_url: str
-    audit_verdict: Optional[str] = ""
-    auditor_notes: Optional[str] = ""
 
 class AuditSampleResponse(BaseModel):
     total_samples: int
@@ -29,3 +27,20 @@ class MatchingDiagnosticsResponse(BaseModel):
     controls_min_rank: float
     imbalance_warning: bool
     notes: str
+
+class AuditReviewSubmission(BaseModel):
+    work_id: str = Field(..., min_length=3, max_length=150, description="Unique Work ID")
+    reviewer_id: str = Field(..., min_length=2, max_length=100, description="Reviewer identifier or name")
+    verdict: str = Field(..., description="Audit verdict: Normal / Regular, Irregularity / Suspicious, Inefficient / Incomplete, Inconsistent Data")
+    notes: Optional[str] = Field(default="", max_length=5000, description="Reviewer findings and observations")
+
+class AuditReviewRecord(BaseModel):
+    work_id: str
+    reviewer_id: str
+    verdict: str
+    notes: str
+    updated_at: str
+
+class AuditReviewListResponse(BaseModel):
+    total_reviews: int
+    reviews: list[AuditReviewRecord]

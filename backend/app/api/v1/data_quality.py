@@ -17,15 +17,15 @@ def get_data_quality_summary():
 
 @router.get("/findings", response_model=ResponseEnvelope[list[RuleFindingItem]])
 def get_data_quality_findings(
-    flag_type: Optional[str] = Query(None, description="duplicate_payment, same_day_bulk, ghost_completion, stalled_unpaid, missing_photo"),
+    flag_type: Optional[str] = Query(None, description="Filter rule: duplicate_payment, same_day_bulk, ghost_completion, stalled_unpaid, missing_photo, orphan_payment, cost_cap, date_sequence"),
     state: Optional[str] = Query(None, description="State filter"),
     category: Optional[str] = Query(None, description="Work category filter"),
     sort_by: str = Query("Sanction_Amount", description="Sort column"),
     sort_order: str = Query("desc", description="asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=500, description="Page size"),
+    page_size: int = Query(50, ge=1, le=settings.PAGE_SIZE_MAX, description=f"Page size (max {settings.PAGE_SIZE_MAX})"),
 ):
-    findings, total_records = DataQualityService.get_findings(
+    findings, total_records, effective_page_size = DataQualityService.get_findings(
         flag_type=flag_type,
         state=state,
         category=category,
@@ -34,7 +34,7 @@ def get_data_quality_findings(
         page=page,
         page_size=page_size,
     )
-    total_pages = (total_records + page_size - 1) // page_size if total_records > 0 else 0
+    total_pages = (total_records + effective_page_size - 1) // effective_page_size if total_records > 0 else 0
     return ResponseEnvelope(
         data=findings,
         meta={
@@ -42,7 +42,7 @@ def get_data_quality_findings(
             "pagination": {
                 "total_records": total_records,
                 "page": page,
-                "page_size": page_size,
+                "page_size": effective_page_size,
                 "total_pages": total_pages,
             }
         }

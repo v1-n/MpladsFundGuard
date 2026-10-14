@@ -36,13 +36,12 @@ venv/
 *.swp
 *.swo
 
-# Ignore all generated clean data and raw data (PII)
+# Ignore all generated clean data, raw data (PII), and review logs
 data/clean/
-data/mplads_360_master.csv
-data/ml_features.csv
-data/anomaly_scores.csv
-data/clean_*.csv
-data/raw/*.csv
+data/raw/
+data/*.csv
+data/*.json
+data/manual_audit_reviews.json
 
 
 # learing file

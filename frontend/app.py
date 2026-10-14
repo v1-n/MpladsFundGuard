@@ -87,9 +87,16 @@ with col2:
         overview = api_client.get_overview()
         st.metric("Total Works Monitored", f"{overview.get('total_works', 0):,}")
         st.metric("Total Settled Expenditure", f"₹{overview.get('total_settled_expenditure', 0) / 1e7:,.1f} Cr")
-        st.metric("Completed Works Monitored", f"{overview.get('completed_works', 0):,}")
         st.metric("Rule-Flagged Works", f"{overview.get('same_day_bulk_payment_works', 0) + overview.get('stalled_unpaid_works', 0):,}")
-        st.success("✅ Master Ledger Integrity: PASS (0 Orphans, 0 Over-caps)")
+        
+        integ = overview.get("integrity_checks", {})
+        integ_status = integ.get("status", "NOT VERIFIED")
+        if integ_status == "PASS":
+            st.success("✅ Master Ledger Integrity: PASS (0 Orphans, 0 Over-caps)")
+        elif integ_status == "WARN":
+            st.warning(f"⚠️ Master Ledger Integrity: WARN ({integ.get('orphan_payments', 0)} Orphans, {integ.get('cost_cap_violations', 0)} Over-caps)")
+        else:
+            st.info(f"ℹ️ Master Ledger Integrity: {integ_status}")
     except Exception as e:
         st.warning(f"Backend data loading: {e}")
 

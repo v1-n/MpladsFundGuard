@@ -12,9 +12,9 @@ from frontend.components.disclaimer import render_disclaimer_banner
 from frontend.components.export import render_csv_download_button
 from frontend.components.kpi_card import format_currency_inr
 
-st.set_page_config(page_title="Anomaly Screening | MPLADS FundGuard", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Anomaly Screening & Dossier | MPLADS FundGuard", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ Multi-Dimensional Anomaly Screening")
+st.title("🛡️ Multi-Dimensional Anomaly Screening & Investigation")
 render_disclaimer_banner()
 
 st.markdown(
@@ -26,6 +26,10 @@ st.markdown(
     **Scores are exploratory screening ranks for manual audit prioritization, not probabilities or proof of wrongdoing.**
     """
 )
+
+# Session state for case review status
+if "work_investigation_cases" not in st.session_state:
+    st.session_state.work_investigation_cases = {}
 
 # Filter bar
 st.markdown("### 1. Screening Search & Filters")
@@ -45,7 +49,7 @@ scol1, scol2, scol3 = st.columns(3)
 with scol1:
     min_score = st.slider("Minimum Anomaly Score", min_value=0.0, max_value=1.0, value=0.50, step=0.05)
 with scol2:
-    page_size = st.selectbox("Page Size", options=[25, 50, 100], index=1)
+    page_size = st.selectbox("Page Size", options=[25, 50, 100, 200], index=1)
 with scol3:
     page_num = st.number_input("Page Number", min_value=1, value=1, step=1)
 
@@ -72,8 +76,17 @@ try:
     if anomalies:
         table_df = pd.DataFrame(anomalies)
 
+        def get_priority_badge(score):
+            if score >= 0.70:
+                return "🔴 High Priority"
+            elif score >= 0.50:
+                return "🟡 Elevated Priority"
+            else:
+                return "🔵 Moderate Priority"
+
         display_df = pd.DataFrame({
             "Work ID": table_df["work_id"],
+            "Screening Priority": table_df["anomaly_score"].apply(get_priority_badge),
             "Stage": table_df["stage"],
             "Rank": table_df["rank_in_stage"],
             "Anomaly Score": table_df["anomaly_score"].apply(lambda s: f"{s:.4f}"),
@@ -84,7 +97,8 @@ try:
             "Work Type": table_df["work"],
             "Sanctioned (₹)": table_df["sanction_amount"].apply(lambda x: f"₹{x:,.0f}" if pd.notna(x) else "—"),
             "Settled Exp (₹)": table_df["total_exp_settled"].apply(lambda x: f"₹{x:,.0f}" if pd.notna(x) else "—"),
-            "Peer Tier": table_df["peer_tier"].fillna("—")
+            "Peer Tier": table_df["peer_tier"].fillna("—"),
+            "Case Status": table_df["work_id"].apply(lambda wid: st.session_state.work_investigation_cases.get(wid, {}).get("status", "Unreviewed"))
         })
 
         st.dataframe(display_df, use_container_width=True)
@@ -96,19 +110,23 @@ try:
         )
 
         st.markdown("---")
-        st.subheader("2. Detailed Work Record Inspection")
-        st.caption("Inspect full multi-dimensional breakdown, peer comparisons, and ledger timeline for any specific project.")
+        st.subheader("2. Work Dossier & Investigation Case Tracking")
+        st.caption("Inspect full multi-dimensional breakdown, track review status, and compare works side-by-side.")
 
-        # Let user select from the current table or type custom Work ID
         work_options = list(table_df["work_id"])
-        selected_work = st.selectbox("Select a Work ID to Inspect in Detail", options=work_options)
+        selected_work = st.selectbox("Select Project to Investigate", options=work_options)
 
         if selected_work:
             try:
                 detail = api_client.get_anomaly_detail(work_id=selected_work)
                 
                 st.markdown(f"#### 🔍 Detailed Dossier: `{detail.get('work_id')}`")
-                st.info(f"**Work Description:** {detail.get('work_description') or detail.get('work')}")
+                
+                dossier_col1, dossier_col2 = st.columns([3, 1])
+                with dossier_col1:
+                    st.info(f"**Work Description:** {detail.get('work_description') or detail.get('work')}")
+                with dossier_col2:
+                    st.link_button("🔗 View on Official MPLADS Portal", "https://www.mplads.gov.in/", help="Cross-reference payment bills and completion certificates on the public portal")
 
                 # Metric row 1: Financial & Score
                 mcol1, mcol2, mcol3, mcol4 = st.columns(4)
@@ -124,8 +142,29 @@ try:
                 pcol3.metric("Primary Vendor", detail.get("primary_vendor", "Unknown"))
                 pcol4.metric("Peer Group Median", format_currency_inr(detail.get("peer_median_settled")))
 
+                # Investigation Case Status & Notes
+                st.markdown("##### 📁 Reviewer Case Management")
+                case_info = st.session_state.work_investigation_cases.get(selected_work, {"status": "Unreviewed", "notes": ""})
+                
+                case_status_opts = ["Unreviewed", "Under Review", "Escalated for Field Audit", "Resolved (Expected Pattern)", "Resolved (Data Entry Error)"]
+                c_idx = case_status_opts.index(case_info["status"]) if case_info["status"] in case_status_opts else 0
+
+                ccol1, ccol2 = st.columns([1, 2])
+                with ccol1:
+                    new_case_status = st.selectbox("Investigation Status", options=case_status_opts, index=c_idx, key=f"c_stat_{selected_work}")
+                with ccol2:
+                    new_case_notes = st.text_input("Reviewer Case Notes", value=case_info.get("notes", ""), placeholder="e.g. Scope justified; multiple supplier bills cross-referenced...", key=f"c_notes_{selected_work}")
+
+                if st.button("💾 Update Case Record", key=f"save_case_{selected_work}"):
+                    st.session_state.work_investigation_cases[selected_work] = {
+                        "status": new_case_status,
+                        "notes": new_case_notes
+                    }
+                    st.success(f"Case for `{selected_work}` updated to `{new_case_status}`!")
+                    st.rerun()
+
                 # Detailed breakdown tabs
-                t_factors, t_timeline, t_flags = st.tabs(["🏷️ Extreme Factors & Peer Comparison", "⏱️ Timeline & Duration", "🚩 Ledger Rule Flags"])
+                t_factors, t_timeline, t_flags, t_compare = st.tabs(["🏷️ Extreme Factors & Peer Comparison", "⏱️ Timeline & Duration", "🚩 Ledger Rule Flags", "⚖️ Compare with Peer Work"])
 
                 with t_factors:
                     st.markdown("**Top Anomalous Drivers:**")
@@ -157,6 +196,30 @@ try:
                         st.success("No deterministic ledger rule flags triggered for this work.")
                     
                     st.caption(f"**Methodology Note:** {detail.get('methodology_note')}")
+
+                with t_compare:
+                    st.markdown("##### Side-by-Side Work Comparison")
+                    compare_candidates = [w for w in work_options if w != selected_work]
+                    if compare_candidates:
+                        comp_target = st.selectbox("Select Second Work to Compare", options=compare_candidates, key="comp_sel")
+                        try:
+                            comp_detail = api_client.get_anomaly_detail(work_id=comp_target)
+                            
+                            comp_table = [
+                                {"Metric": "Work Description", "Selected Work": detail.get("work"), "Comparison Work": comp_detail.get("work")},
+                                {"Metric": "State / Constituency", "Selected Work": f"{detail.get('state')} / {detail.get('constituency')}", "Comparison Work": f"{comp_detail.get('state')} / {comp_detail.get('constituency')}"},
+                                {"Metric": "Anomaly Score", "Selected Work": f"{detail.get('anomaly_score', 0):.4f}", "Comparison Work": f"{comp_detail.get('anomaly_score', 0):.4f}"},
+                                {"Metric": "Rank in Stage", "Selected Work": f"#{detail.get('rank_in_stage', 0)}", "Comparison Work": f"#{comp_detail.get('rank_in_stage', 0)}"},
+                                {"Metric": "Sanctioned Amount", "Selected Work": format_currency_inr(detail.get("sanction_amount")), "Comparison Work": format_currency_inr(comp_detail.get("sanction_amount"))},
+                                {"Metric": "Settled Expenditure", "Selected Work": format_currency_inr(detail.get("total_exp_settled")), "Comparison Work": format_currency_inr(comp_detail.get("total_exp_settled"))},
+                                {"Metric": "Payment Installments", "Selected Work": str(detail.get("installments_count", 0)), "Comparison Work": str(comp_detail.get("installments_count", 0))},
+                                {"Metric": "Unique Vendors", "Selected Work": str(detail.get("vendors_count", 0)), "Comparison Work": str(comp_detail.get("vendors_count", 0))},
+                                {"Metric": "Primary Vendor", "Selected Work": detail.get("primary_vendor", "—"), "Comparison Work": comp_detail.get("primary_vendor", "—")},
+                                {"Metric": "Peer Group Median", "Selected Work": format_currency_inr(detail.get("peer_median_settled")), "Comparison Work": format_currency_inr(comp_detail.get("peer_median_settled"))},
+                            ]
+                            st.dataframe(pd.DataFrame(comp_table), use_container_width=True)
+                        except Exception as e:
+                            st.error(f"Error loading comparison work: {e}")
 
             except Exception as e:
                 st.error(f"Error fetching detail for {selected_work}: {e}")

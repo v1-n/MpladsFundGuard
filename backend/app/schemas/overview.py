@@ -5,7 +5,7 @@ class IntegrityChecks(BaseModel):
     orphan_payments: int
     cost_cap_violations: int
     date_sequence_violations: int
-    status: str
+    status: str  # PASS, WARN, NOT VERIFIED, UNKNOWN
 
 class OverviewKPIs(BaseModel):
     total_works: int
@@ -17,6 +17,7 @@ class OverviewKPIs(BaseModel):
     total_sanctioned_amount: float
     total_settled_expenditure: float
     total_in_progress_expenditure: float
+    remaining_unspent_amount: float
     overall_utilization_ratio: float
     
     stalled_unpaid_works: int
@@ -31,4 +32,5 @@ class OverviewKPIs(BaseModel):
     in_progress_anomalies_top_300: int
     
     integrity_checks: IntegrityChecks
+    data_provenance: Optional[dict[str, str]] = None
     disclaimer: str

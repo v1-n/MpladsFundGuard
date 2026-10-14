@@ -20,6 +20,13 @@ class FundGuardAPIClient:
         self.base_url = base_url.rstrip("/")
         self.root_url = BACKEND_BASE_URL.rstrip("/")
         self.timeout = timeout
+        # Reusable client session with HTTP connection pooling
+        self._client = httpx.Client(timeout=self.timeout)
+
+    def _get_client(self) -> httpx.Client:
+        if self._client.is_closed:
+            self._client = httpx.Client(timeout=self.timeout)
+        return self._client
 
     def _handle_response(self, response: httpx.Response) -> dict:
         if response.status_code == 503:
@@ -48,38 +55,33 @@ class FundGuardAPIClient:
 
     def check_health(self) -> dict:
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                r = client.get(f"{self.root_url}/health")
-                return self._handle_response(r)
+            client = self._get_client()
+            r = client.get(f"{self.root_url}/health")
+            return self._handle_response(r)
         except httpx.ConnectError:
             raise APIError("Cannot connect to Backend API. Please verify FastAPI is running at " + self.root_url)
         except httpx.RequestError as e:
             raise APIError(f"Request failed: {e}")
 
     def get_overview(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/overview")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/overview")
+        return self._handle_response(r).get("data", {})
 
     def get_eda_summary(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/eda/summary")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/eda/summary")
+        return self._handle_response(r).get("data", {})
 
     def get_eda_missing_values(self, dataset: str = "master") -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/eda/missing-values", params={"dataset": dataset})
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/eda/missing-values", params={"dataset": dataset})
+        return self._handle_response(r).get("data", {})
 
     def get_eda_distributions(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/eda/distributions")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/eda/distributions")
+        return self._handle_response(r).get("data", {})
 
     def get_data_quality_summary(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/data-quality/summary")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/data-quality/summary")
+        return self._handle_response(r).get("data", {})
 
     def get_data_quality_findings(
         self,
@@ -104,25 +106,21 @@ class FundGuardAPIClient:
         if category:
             params["category"] = category
 
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/data-quality/findings", params=params)
-            res = self._handle_response(r)
-            return res.get("data", []), res.get("meta", {}).get("pagination", {})
+        r = self._get_client().get(f"{self.base_url}/data-quality/findings", params=params)
+        res = self._handle_response(r)
+        return res.get("data", []), res.get("meta", {}).get("pagination", {})
 
     def get_fund_utilization_summary(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/fund-utilization/summary")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/fund-utilization/summary")
+        return self._handle_response(r).get("data", {})
 
     def get_fund_utilization_by_state(self, min_works: int = 1) -> list[dict]:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/fund-utilization/by-state", params={"min_works": min_works})
-            return self._handle_response(r).get("data", [])
+        r = self._get_client().get(f"{self.base_url}/fund-utilization/by-state", params={"min_works": min_works})
+        return self._handle_response(r).get("data", [])
 
     def get_fund_utilization_by_category(self) -> list[dict]:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/fund-utilization/by-category")
-            return self._handle_response(r).get("data", [])
+        r = self._get_client().get(f"{self.base_url}/fund-utilization/by-category")
+        return self._handle_response(r).get("data", [])
 
     def get_anomalies(
         self,
@@ -156,35 +154,46 @@ class FundGuardAPIClient:
         if search:
             params["search"] = search
 
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/anomalies", params=params)
-            res = self._handle_response(r)
-            return res.get("data", []), res.get("meta", {}).get("pagination", {})
+        r = self._get_client().get(f"{self.base_url}/anomalies", params=params)
+        res = self._handle_response(r)
+        return res.get("data", []), res.get("meta", {}).get("pagination", {})
 
     def get_anomaly_detail(self, work_id: str) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/anomalies/{work_id}")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/anomalies/{work_id}")
+        return self._handle_response(r).get("data", {})
 
     def get_model_evaluation(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/model-evaluation")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/model-evaluation")
+        return self._handle_response(r).get("data", {})
 
     def get_blind_audit_sample(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/audit/sample")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/audit/sample")
+        return self._handle_response(r).get("data", {})
 
     def get_audit_rubric(self) -> str:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/audit/rubric")
-            return self._handle_response(r).get("data", {}).get("rubric_markdown", "")
+        r = self._get_client().get(f"{self.base_url}/audit/rubric")
+        return self._handle_response(r).get("data", {}).get("rubric_markdown", "")
 
     def get_audit_diagnostics(self) -> dict:
-        with httpx.Client(timeout=self.timeout) as client:
-            r = client.get(f"{self.base_url}/audit/diagnostics")
-            return self._handle_response(r).get("data", {})
+        r = self._get_client().get(f"{self.base_url}/audit/diagnostics")
+        return self._handle_response(r).get("data", {})
+
+    def submit_audit_review(self, work_id: str, reviewer_id: str, verdict: str, notes: str = "") -> dict:
+        payload = {
+            "work_id": work_id,
+            "reviewer_id": reviewer_id,
+            "verdict": verdict,
+            "notes": notes,
+        }
+        r = self._get_client().post(f"{self.base_url}/audit/reviews", json=payload)
+        return self._handle_response(r).get("data", {})
+
+    def get_audit_reviews(self, reviewer_id: Optional[str] = None) -> list[dict]:
+        params = {}
+        if reviewer_id:
+            params["reviewer_id"] = reviewer_id
+        r = self._get_client().get(f"{self.base_url}/audit/reviews", params=params)
+        return self._handle_response(r).get("data", {}).get("reviews", [])
 
 # Singleton instance for the frontend
 api_client = FundGuardAPIClient()

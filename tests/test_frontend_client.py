@@ -10,9 +10,7 @@ def test_api_client_handles_503_rebuild():
         )
 
     client = FundGuardAPIClient(base_url="http://mock-server/api/v1")
-    # Test through a custom client with mocked transport
     with httpx.Client(transport=httpx.MockTransport(mock_transport)) as mock_http:
-        # Override _handle_response behavior with mock response
         resp = mock_http.get("http://mock-server/api/v1/overview")
         with pytest.raises(APIError) as exc_info:
             client._handle_response(resp)
@@ -34,3 +32,28 @@ def test_api_client_handles_404():
             client._handle_response(resp)
         assert exc_info.value.status_code == 404
         assert "Work not found" in exc_info.value.message
+
+def test_api_client_audit_review_methods():
+    def mock_transport(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and "audit/reviews" in str(request.url):
+            return httpx.Response(
+                201,
+                json={"data": {"work_id": "WS/1", "reviewer_id": "Rev1", "verdict": "Normal / Regular", "notes": "", "updated_at": "2026-10-14T11:00:00Z"}}
+            )
+        elif request.method == "GET" and "audit/reviews" in str(request.url):
+            return httpx.Response(
+                200,
+                json={"data": {"total_reviews": 1, "reviews": [{"work_id": "WS/1", "reviewer_id": "Rev1", "verdict": "Normal / Regular", "notes": "", "updated_at": "2026-10-14T11:00:00Z"}]}}
+            )
+        return httpx.Response(404)
+
+    client = FundGuardAPIClient(base_url="http://mock-server/api/v1")
+    client._client = httpx.Client(transport=httpx.MockTransport(mock_transport))
+
+    rec = client.submit_audit_review("WS/1", "Rev1", "Normal / Regular", "")
+    assert rec["work_id"] == "WS/1"
+    assert rec["verdict"] == "Normal / Regular"
+
+    reviews = client.get_audit_reviews(reviewer_id="Rev1")
+    assert len(reviews) == 1
+    assert reviews[0]["reviewer_id"] == "Rev1"

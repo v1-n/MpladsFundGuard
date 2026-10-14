@@ -4,6 +4,7 @@ from backend.app.repositories.data_repository import data_repo
 from backend.app.schemas.data_quality import QualitySummary, QualityCheckItem, RuleFindingItem
 from backend.app.core.config import settings
 
+# Canonical dictionary of supported irregularity rules
 FLAG_COL_MAP = {
     "duplicate_payment": "Flag_Duplicate_Payment",
     "same_day_bulk": "Flag_Same_Day_Bulk_Payment",
@@ -25,6 +26,16 @@ REASON_MAP = {
     "Integrity_Cost_Cap_Violation": "Settled payments exceeded sanctioned amount by >1%",
     "Integrity_Date_Sequence_Violation": "Chronological violation across recommendation, sanction, or payment dates"
 }
+
+CANONICAL_ALL_FLAGS = [
+    "Flag_Duplicate_Payment",
+    "Flag_Same_Day_Bulk_Payment",
+    "Flag_Ghost_Completion",
+    "Flag_Stalled_Unpaid",
+    "Flag_Orphan_Payment",
+    "Integrity_Cost_Cap_Violation",
+    "Integrity_Date_Sequence_Violation",
+]
 
 class DataQualityService:
     @staticmethod
@@ -66,9 +77,9 @@ class DataQualityService:
         sort_order: str = "desc",
         page: int = 1,
         page_size: int = 50
-    ) -> tuple[list[RuleFindingItem], int]:
+    ) -> tuple[list[RuleFindingItem], int, int]:
         master = data_repo.get_master_df().copy()
-        page_size = min(page_size, settings.PAGE_SIZE_MAX)
+        effective_page_size = min(max(1, page_size), settings.PAGE_SIZE_MAX)
         
         # Build filter condition
         if flag_type and flag_type in FLAG_COL_MAP:
@@ -76,17 +87,13 @@ class DataQualityService:
             if target_col == "Missing_Photo_Proof":
                 cond = (master["Missing_Photo_Proof"] == 1) & (master.get("Post_Photo_Cutoff", 1) == 1)
             else:
-                cond = master[target_col] == 1
+                cond = (master[target_col] == 1) if target_col in master.columns else pd.Series(False, index=master.index)
             filtered = master[cond].copy()
             filtered["_primary_flag"] = target_col
         else:
-            # Any rule flag firing
-            flag_cols = [
-                "Flag_Duplicate_Payment", "Flag_Same_Day_Bulk_Payment",
-                "Flag_Ghost_Completion", "Flag_Stalled_Unpaid"
-            ]
+            # Canonical coverage across all 8 supported rules
             cond = pd.Series(False, index=master.index)
-            for fc in flag_cols:
+            for fc in CANONICAL_ALL_FLAGS:
                 if fc in master.columns:
                     cond = cond | (master[fc] == 1)
             # Add post-cutoff photo missing
@@ -95,15 +102,14 @@ class DataQualityService:
             
             filtered = master[cond].copy()
             
-            # Assign primary flag label
             def find_primary(row):
-                for fc in flag_cols:
+                for fc in CANONICAL_ALL_FLAGS:
                     if row.get(fc, 0) == 1:
                         return fc
                 if row.get("Missing_Photo_Proof", 0) == 1 and row.get("Post_Photo_Cutoff", 0) == 1:
                     return "Missing_Photo_Proof"
                 return "Rule_Flag"
-            filtered["_primary_flag"] = filtered.apply(find_primary, axis=1)
+            filtered["_primary_flag"] = filtered.apply(find_primary, axis=1) if len(filtered) else "Rule_Flag"
             
         if state:
             filtered = filtered[filtered["State"].str.upper() == state.upper()]
@@ -112,7 +118,7 @@ class DataQualityService:
             
         total_records = len(filtered)
         if total_records == 0:
-            return [], 0
+            return [], 0, effective_page_size
             
         # Sorting
         ascending = (sort_order.lower() == "asc")
@@ -122,8 +128,8 @@ class DataQualityService:
             filtered = filtered.sort_values(by="Sanction_Amount", ascending=False)
             
         # Pagination
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
+        start_idx = (page - 1) * effective_page_size
+        end_idx = start_idx + effective_page_size
         paged = filtered.iloc[start_idx:end_idx]
         
         findings = []
@@ -145,4 +151,4 @@ class DataQualityService:
                 completion_date=str(r.get("Completion Date", "")) if pd.notna(r.get("Completion Date")) else None
             ))
             
-        return findings, total_records
+        return findings, total_records, effective_page_size
