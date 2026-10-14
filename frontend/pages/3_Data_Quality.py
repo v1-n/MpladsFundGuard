@@ -5,18 +5,34 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 from frontend.api_client import api_client, APIError
+from frontend.theme import inject_css
 from frontend.components.disclaimer import render_disclaimer_banner
+from frontend.components.formatters import lakh_crore, inr, compact
+from frontend.components.cards import section_header, info_card, empty_state
+from frontend.components.scorecard import integrity_scorecard
+from frontend.components.dataframe import styled_table
 from frontend.components.export import render_csv_download_button
+from frontend.components.explainer import render_explanation
 
-st.set_page_config(page_title="Data Quality & Ledger Rules | MPLADS FundGuard", page_icon="🔍", layout="wide")
+st.set_page_config(
+    page_title="Data Quality & Ledger Rules | MPLADS FundGuard",
+    page_icon="🔍",
+    layout="wide",
+)
+
+inject_css()
 
 st.title("🔍 Data Quality Audit & Ledger Rules")
 render_disclaimer_banner()
 
-tab1, tab2 = st.tabs(["📋 14-Point Quality Audit Suite", "🚨 Rule-Based Irregularities Browser"])
+tab1, tab2, tab3 = st.tabs([
+    "📋 14-Point Quality Audit Suite",
+    "🚨 Rule-Based Irregularities Browser",
+    "📖 Rule Definitions & Benign Explanations",
+])
 
 # ----------------- TAB 1: 14-Point Quality Audit Suite -----------------
 with tab1:
@@ -29,20 +45,16 @@ with tab1:
         st.error(f"Failed to connect to backend: {e}")
         st.stop()
 
-    st.subheader("Data Pipeline Quality & Audit Verification")
-    
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Total Checks", quality_summary.get("total_checks", 0))
-    k2.metric("Passed Checks", quality_summary.get("passed", 0))
-    k3.metric("Input Warnings", quality_summary.get("input_warnings", 0), help="Expected public data quirks (e.g. legacy missing photos, missing start dates)")
-    k4.metric("Output Warnings", quality_summary.get("output_warnings", 0), help="Output verification alerts")
-    k5.metric("Failures", quality_summary.get("failures", 0))
+    section_header(
+        title="1. Pipeline Integrity Scorecard",
+        subtitle="Verification status across 14 input quality audits and output integrity gates",
+    )
+    integrity_scorecard(quality_summary)
 
-    if quality_summary.get("failures", 0) == 0:
-        st.success("✅ **Quality Gate Status: PASS** — All output integrity gates, foreign key constraints, and accounting cost-caps passed validation.")
-    else:
-        st.error("❌ **Quality Gate Failures Detected**")
-
+    section_header(
+        title="2. Quality Gate Results Detail",
+        subtitle="Detailed log of all automated checks executed during the pipeline build",
+    )
     checks = quality_summary.get("checks", [])
     if checks:
         checks_data = []
@@ -53,19 +65,26 @@ with tab1:
             checks_data.append({
                 "#": c.get("check_number", 0),
                 "Audit Check Name": c.get("check_name", ""),
-                "Type": gate_type,
+                "Gate Type": gate_type,
                 "Status": badge,
                 "Message": c.get("message", ""),
-                "Detail / Count": str(c.get("count", "")) if c.get("count") is not None else str(c.get("detail", ""))
+                "Finding Detail / Count": str(c.get("count", "")) if c.get("count") is not None else str(c.get("detail", "—")),
             })
-        st.dataframe(pd.DataFrame(checks_data), use_container_width=True)
+        styled_table(pd.DataFrame(checks_data))
+
+    render_explanation(
+        what="The 14-point audit evaluates data cleanliness (input audits) and strict database constraints (output integrity gates).",
+        why="Output integrity gates prevent data leakage, orphan foreign keys, and cost cap violations before models are trained.",
+        look_for="Check whether any output gates failed. Input warnings (e.g. legacy missing photos before mandate) are normal in public ledgers.",
+    )
 
 # ----------------- TAB 2: Rule-Based Irregularities Browser -----------------
 with tab2:
-    st.subheader("Rule-Based Irregularity Screening")
-    st.caption("Browse projects flagged by deterministic rules for payment, completion, or vendor irregularities.")
+    section_header(
+        title="Deterministic Rule Screening Browser",
+        subtitle="Inspect individual works flagged by deterministic criteria for payment or timeline irregularities",
+    )
 
-    # Filter bar
     fcol1, fcol2, fcol3, fcol4 = st.columns(4)
     with fcol1:
         flag_type_opt = st.selectbox(
@@ -91,14 +110,18 @@ with tab2:
                 "orphan_payment": "Orphan Payments (No Sanction Order)",
                 "cost_cap": "Cost Cap Violations (>1% over sanction)",
                 "date_sequence": "Date Sequence Violations (Chronological)",
-            }[x]
+            }[x],
         )
     with fcol2:
-        state_filter = st.text_input("Filter by State (Optional)", placeholder="e.g. Rajasthan, Uttar Pradesh")
+        state_filter = st.text_input("Filter by State (Optional)", placeholder="e.g. Maharashtra, Uttar Pradesh")
     with fcol3:
         category_filter = st.text_input("Filter by Work Category (Optional)", placeholder="e.g. Drinking Water, Roads")
     with fcol4:
-        sort_order = st.selectbox("Sort Order", options=["desc", "asc"], format_func=lambda x: "Highest Sanction First" if x == "desc" else "Lowest Sanction First")
+        sort_order = st.selectbox(
+            "Sort by Sanction Amount",
+            options=["desc", "asc"],
+            format_func=lambda x: "Highest Sanction First" if x == "desc" else "Lowest Sanction First",
+        )
 
     pcol1, pcol2 = st.columns(2)
     with pcol1:
@@ -118,43 +141,96 @@ with tab2:
             sort_by="Sanction_Amount",
             sort_order=sort_order,
             page=int(page_num),
-            page_size=int(page_size)
+            page_size=int(page_size),
         )
         total_records = pagination.get("total_records", 0)
         total_pages = pagination.get("total_pages", 0)
-        
-        st.write(f"Showing **{len(findings)}** of **{total_records:,}** matching works (Page {page_num} of {max(1, total_pages)}):")
+
+        st.caption(
+            f"Showing **{len(findings)}** of **{total_records:,}** matching works "
+            f"(Page {page_num} of {max(1, total_pages)}):"
+        )
 
         if findings:
             table_df = pd.DataFrame(findings)
-            
-            # Format currency and clean up display columns
             display_df = pd.DataFrame({
                 "Work ID": table_df["work_id"],
                 "State": table_df["state"],
                 "Constituency": table_df["constituency"],
                 "MP Name": table_df["mp_name"],
                 "Work Description": table_df["work"],
-                "Sanctioned (₹)": table_df["sanction_amount"].apply(lambda x: f"₹{x:,.0f}" if pd.notna(x) else "—"),
-                "Settled Exp (₹)": table_df["total_exp_settled"].apply(lambda x: f"₹{x:,.0f}" if pd.notna(x) else "—"),
+                "Sanctioned": table_df["sanction_amount"].apply(lambda x: lakh_crore(x) if pd.notna(x) else "—"),
+                "Settled Exp": table_df["total_exp_settled"].apply(lambda x: lakh_crore(x) if pd.notna(x) else "—"),
                 "Triggered Rule": table_df["rule_flag_type"],
-                "Irregularity Reason": table_df["reason"],
+                "Screening Reason": table_df["reason"],
                 "Installments": table_df["installments"],
                 "Vendors": table_df["vendors"],
                 "Primary Vendor": table_df["primary_vendor"],
-                "Completion Date": table_df["completion_date"].fillna("—")
+                "Completion Date": table_df["completion_date"].fillna("—"),
             })
 
-            st.dataframe(display_df, use_container_width=True)
+            styled_table(display_df)
 
             # Export button with formula injection protection
             render_csv_download_button(
                 df=display_df,
                 filename=f"rule_findings_{flag_type_opt}_page{page_num}.csv",
-                button_label="📥 Export These Findings to Sanitized CSV"
+                button_label="📥 Export Filtered Findings to Sanitized CSV",
             )
         else:
-            st.info("No works found matching the selected filter criteria.")
+            empty_state("No works match the selected criteria.")
 
     except Exception as e:
-        st.error(f"Error loading findings: {e}")
+        st.error(f"Error loading rule findings: {e}")
+
+# ----------------- TAB 3: Rule Definitions & Benign Explanations -----------------
+with tab3:
+    section_header(
+        title="Canonical Rule Definitions & Possible Benign Explanations",
+        subtitle="Contextual reference to prevent misinterpreting administrative artifacts as wrongdoing",
+    )
+
+    rules_context = [
+        {
+            "rule": "Same-Day Bulk Payments",
+            "threshold": "≥8 works (each ≤₹5 Lakh) paid to a single vendor on the exact same calendar date.",
+            "benign": "District Treasuries frequently process batches of petty works (e.g. school benches, handpumps) on a single administrative payment day to optimize clerical workflow.",
+            "check": "Verify whether the works were physically executed across separate physical locations despite clustered payment voucher dates.",
+        },
+        {
+            "rule": "Stalled Unpaid Works",
+            "threshold": "Sanctioned > 180 days ago with zero expenditure disbursed in the payment ledger.",
+            "benign": "Land acquisition, contractor retendering, or seasonal delays (e.g. monsoon) commonly postpone civil works start dates.",
+            "check": "Review administrative sanction file for tender status, revised execution orders, or contractor cancellation notices.",
+        },
+        {
+            "rule": "Duplicate Payment Rows",
+            "threshold": "Exact duplicate ledger rows sharing identical Work ID, Vendor Name, Amount, and Date.",
+            "benign": "Portal double-entry glitches or accidental re-submissions by district operators without financial duplication at the bank level.",
+            "check": "Inspect bank payment transaction IDs (UTR numbers) on the public portal to verify whether actual funds were debited twice.",
+        },
+        {
+            "rule": "Ghost Completions",
+            "threshold": "Work marked 'Completed' on portal with ₹0 settled and ₹0 pending expenditure.",
+            "benign": "Data entry clerk prematurely toggled status flag upon administrative sanction, or work was merged into another scheme.",
+            "check": "Check physical site inspection photos or completion certificates on the portal.",
+        },
+        {
+            "rule": "Missing Photo Proof (Post-Cutoff)",
+            "threshold": "Work completed after May 2026 lacking required geotagged physical asset photograph.",
+            "benign": "Photographs may have been taken offline by district engineers but pending upload due to portal file size limits.",
+            "check": "Request physical completion report with timestamped photographs from the District Planning Office.",
+        },
+        {
+            "rule": "Cost Cap Violations",
+            "threshold": "Settled expenditure exceeds the sanctioned amount by more than 1%.",
+            "benign": "Approved cost escalation or revised administrative sanction orders not yet updated in the summary table.",
+            "check": "Inspect revised administrative approvals uploaded in portal documents.",
+        },
+    ]
+
+    for r in rules_context:
+        with st.expander(f"📌 {r['rule']}"):
+            st.markdown(f"**Screening Threshold:** {r['threshold']}")
+            st.markdown(f"**Possible Benign Operational Reason:** {r['benign']}")
+            st.markdown(f"**Verification Guidance for Reviewers:** {r['check']}")
