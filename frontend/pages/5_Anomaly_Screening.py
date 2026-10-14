@@ -47,7 +47,7 @@ with fcol3:
 
 scol1, scol2, scol3 = st.columns(3)
 with scol1:
-    min_score = st.slider("Minimum Anomaly Score", min_value=0.0, max_value=1.0, value=0.50, step=0.05)
+    min_score = st.slider("Minimum Anomaly Score", min_value=0.0, max_value=1.0, value=0.0, step=0.05)
 with scol2:
     page_size = st.selectbox("Page Size", options=[25, 50, 100, 200], index=1)
 with scol3:
