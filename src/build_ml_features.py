@@ -63,6 +63,7 @@ n_t3 = (tier1.isna() & tier2.isna()).sum()
 
 pm = tier1.fillna(tier2).fillna(tier3)
 base["peer_median_settled"] = pm
+base["peer_tier"] = np.where(tier1.notna(), "Tier 1 (Work x State)", np.where(tier2.notna(), "Tier 2 (National Work)", "Tier 3 (Global Fallback)"))
 base["paid_vs_peer_log"] = np.log1p(base.Total_Exp_Settled) - np.log1p(pm)
 
 print(f"Peer Benchmark Breakdown:")
@@ -177,11 +178,13 @@ for stage_name, (mask, cols) in stages.items():
 flags = [c for c in df.columns if c.startswith("Flag_") or c.startswith("Missing_")]
 base["n_rule_flags"] = base[flags].sum(axis=1)
 
+base["top_anomalous_factors"] = base["extreme_feature_indicators"]
+
 out_cols = [
     "Work ID", "Stage", "rank_in_stage", "anomaly_score", "extreme_feature_indicators",
-    "State", "Constituency", "Hon'ble Members of Parliament", "Work",
+    "top_anomalous_factors", "State", "Constituency", "Hon'ble Members of Parliament", "Work",
     "Sanction_Amount", "Total_Exp_Settled", "Total_Exp_In_Progress", "paid_vs_peer_log",
-    "n_rule_flags"
+    "peer_tier", "peer_median_settled", "n_rule_flags"
 ] + flags
 
 out_scores = CLEAN_DIR / "anomaly_scores.csv"

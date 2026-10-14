@@ -33,6 +33,8 @@ CLEAN_DIR = BASE_DIR / "data" / "clean"
 
 # ── Formatting helpers ─────────────────────────────────────────────────────
 
+import json
+
 SEP = "─" * 72
 PASS  = "  ✓ PASS"
 WARN  = "  ⚠️  WARN"
@@ -40,9 +42,16 @@ FAIL  = "  ✗ FAIL"
 
 failures = []
 warnings = []
+check_records = []
+current_check_num = 0
+current_check_name = "Load clean datasets"
 
+def set_check(num, name):
+    global current_check_num, current_check_name
+    current_check_num = num
+    current_check_name = name
 
-def result(level, msg, detail=""):
+def result(level, msg, detail="", count=None):
     icon = PASS if level == "pass" else WARN if level == "warn" else FAIL
     print(f"{icon}  {msg}")
     if detail:
@@ -51,6 +60,15 @@ def result(level, msg, detail=""):
         failures.append(msg)
     if level == "warn":
         warnings.append(msg)
+    check_records.append({
+        "check_number": current_check_num,
+        "check_name": current_check_name,
+        "status": level.upper(),
+        "message": msg,
+        "detail": detail,
+        "count": count,
+        "is_output_gate": current_check_num in [9, 10]
+    })
 
 
 print("=" * 72)
@@ -61,6 +79,7 @@ print("=" * 72)
 # ── Load clean files ──────────────────────────────────────────────────────
 print(f"\n{SEP}")
 print("[0] Loading clean datasets...")
+set_check(0, "Load clean datasets")
 
 REQUIRED_FILES = {
     "sanc":  CLEAN_DIR / "clean_works_sanctioned.csv",
@@ -93,6 +112,7 @@ sanc, exp, comp, mp = dfs["sanc"], dfs["exp"], dfs["comp"], dfs["mp"]
 # ── CHECK 1: Required columns ────────────────────────────────────────────
 print(f"\n{SEP}")
 print("[1] Required columns present...")
+set_check(1, "Required columns present")
 
 REQUIRED_COLS = {
     "sanc": ["Work ID", "Sanction Amount ( ₹ )"],
@@ -111,10 +131,11 @@ for key, cols in REQUIRED_COLS.items():
 # ── CHECK 2: Work ID integrity ───────────────────────────────────────────
 print(f"\n{SEP}")
 print("[2] Work ID format and uniqueness...")
+set_check(2, "Work ID format and uniqueness")
 
 WID_PATTERN = re.compile(r'^WS/[A-Z0-9]+/\d{4}-\d{4}/\d+$', re.IGNORECASE)
 
-for name, df in [("Sanctioned", sanc), ("Expenditure", exp), ("Completed", comp)]:
+for name, df, is_key_file in [("Sanctioned", sanc, True), ("Expenditure", exp, False), ("Completed", comp, False)]:
     ids = df["Work ID"].dropna().astype(str)
     total = len(df)
     null_rate = df["Work ID"].isna().mean()
@@ -134,6 +155,7 @@ for name, df in [("Sanctioned", sanc), ("Expenditure", exp), ("Completed", comp)
 # ── CHECK 3: Cross-file join coverage ────────────────────────────────────
 print(f"\n{SEP}")
 print("[3] Cross-file join coverage...")
+set_check(3, "Cross-file join coverage")
 
 sanc_ids = set(sanc["Work ID"].dropna())
 exp_ids  = set(exp["Work ID"].dropna())
@@ -181,6 +203,7 @@ if "Transaction Count" in mp.columns and "Total Expenditure (₹)" in mp.columns
 # ── CHECK 4: Orphan payment ID range (stale export detection) ────────────
 print(f"\n{SEP}")
 print("[4] Stale sanction export detection...")
+set_check(4, "Stale sanction export detection")
 
 if orphan_exp:
     def extract_seq(wid):
@@ -205,6 +228,7 @@ if orphan_exp:
 # ── CHECK 5: NaN vs zero audit ────────────────────────────────────────────
 print(f"\n{SEP}")
 print("[5] NaN vs zero audit (blank ≠ zero)...")
+set_check(5, "NaN vs zero audit")
 
 for name, df, col in [
     ("Sanctioned", sanc, "Sanction Amount ( ₹ )"),
@@ -231,6 +255,7 @@ for name, df, col in [
 # ── CHECK 6: Payment status decomposition ────────────────────────────────
 print(f"\n{SEP}")
 print("[6] Payment status audit...")
+set_check(6, "Payment status audit")
 
 if "Payment Status" in exp.columns:
     status_counts = exp["Payment Status"].value_counts(dropna=False)
@@ -257,6 +282,7 @@ else:
 # ── CHECK 7: Amount tail detection (unit errors / outliers) ──────────────
 print(f"\n{SEP}")
 print("[7] Outlier and unit-error detection...")
+set_check(7, "Outlier and unit-error detection")
 
 for name, df, col in [
     ("Sanctioned", sanc, "Sanction Amount ( ₹ )"),
@@ -284,6 +310,7 @@ for name, df, col in [
 # ── CHECK 8: Duplicate record forensics ──────────────────────────────────
 print(f"\n{SEP}")
 print("[8] Duplicate payment row forensics...")
+set_check(8, "Duplicate payment row forensics")
 
 if "Fund Disbursed Amount ( ₹ )" in exp.columns and "Expenditure Date" in exp.columns:
     dup_key = ["Work ID", "Vendor Name", "Fund Disbursed Amount ( ₹ )", "Expenditure Date"]
@@ -324,6 +351,7 @@ input_warnings = list(warnings)  # snapshot before output checks
 # ── CHECK 9: Rule-firing diagnostics (OUTPUT GATE) ────────────────────────
 print(f"\n{SEP}")
 print("[9] Rule-firing prevalence diagnostics (requires master)...")
+set_check(9, "Rule-firing prevalence diagnostics")
 
 MASTER_PATH = CLEAN_DIR / "mplads_360_master.csv"
 if MASTER_PATH.exists():
@@ -338,22 +366,22 @@ if MASTER_PATH.exists():
             # Integrity/Data Gap checks: zero = correct outcome (check passed)
             if fc.startswith("Integrity_") or fc == "Flag_Orphan_Payment":
                 if n == 0:
-                    result("pass", f"{fc} = 0 ✓  check passed (no violations)")
+                    result("pass", f"{fc} = 0 ✓  check passed (no violations)", count=n)
                 else:
                     result("warn", f"{fc}: {n:,} violations ({rate:.2%}) — investigate immediately",
-                           "A non-zero count means real data violated this constraint.")
+                           "A non-zero count means real data violated this constraint.", count=n)
             elif n == 0:
                 result("warn", f"{fc} fires on ZERO works — this rule is dead",
                        "Either the condition can never be satisfied, or it is testing "
-                       "the wrong column. Remove or fix this rule.")
+                       "the wrong column. Remove or fix this rule.", count=n)
             elif rate > 0.05:
                 result("warn",
                        f"{fc} fires on {rate:.1%} of all works",
                        "High prevalence (>5%) may mean the condition is too broad, "
                        "or it is measuring a common pattern (not unusual). "
-                       "Investigate before calling this a risk flag.")
+                       "Investigate before calling this a risk flag.", count=n)
             else:
-                result("pass", f"{fc}: {n:,} works ({rate:.2%})")
+                result("pass", f"{fc}: {n:,} works ({rate:.2%})", count=n)
     else:
         result("warn", "No Flag_ columns found in master dataset")
 else:
@@ -363,6 +391,7 @@ else:
 # ── CHECK 10: Missing-photo flag rate over time ────────────────────────────
 print(f"\n{SEP}")
 print("[10] Missing photo flag — rate over time...")
+set_check(10, "Missing photo flag rate over time")
 
 if MASTER_PATH.exists() and "Missing_Photo_Proof" in master.columns and "Completion Date" in master.columns:
     master["Completion Date"] = pd.to_datetime(master["Completion Date"], errors="coerce")
@@ -391,6 +420,7 @@ else:
 # ── CHECK 11: PII scan result ─────────────────────────────────────────────
 print(f"\n{SEP}")
 print("[11] PII scan — phone numbers in text columns...")
+set_check(11, "PII scan")
 
 PHONE_RE = re.compile(r'(?<!\d)[6-9]\d{9}(?!\d)')
 text_sources = [
@@ -407,15 +437,16 @@ for name, df, cols in text_sources:
                 result("warn",
                        f"{name}[{col}]: {hits:,} rows contain possible phone numbers",
                        "These values have been masked to [PHONE_REDACTED] in clean files. "
-                       "Do NOT commit raw files to a public repo.")
+                       "Do NOT commit raw files to a public repo.", count=int(hits))
 
 if total_pii_hits == 0:
-    result("pass", "No phone-number patterns found in text columns")
+    result("pass", "No phone-number patterns found in text columns", count=0)
 
 
 # ── CHECK 12: Snapshot freshness ─────────────────────────────────────────
 print(f"\n{SEP}")
 print("[12] Data freshness check...")
+set_check(12, "Data freshness check")
 
 date_checks = [
     ("Sanctioned", sanc, "Recommended date"),
@@ -438,14 +469,15 @@ if latest:
                 if lag > 30:
                     result("warn",
                            f"{name} last date {m.strftime('%d-%b-%Y')} lags latest by {lag} days",
-                           "File may be a stale snapshot. Re-download from the portal.")
+                           "File may be a stale snapshot. Re-download from the portal.", count=int(lag))
                 else:
-                    result("pass", f"{name}: Latest date {m.strftime('%d-%b-%Y')} (lag {lag}d)")
+                    result("pass", f"{name}: Latest date {m.strftime('%d-%b-%Y')} (lag {lag}d)", count=int(lag))
 
 
 # ── CHECK 13: Financial reconciliation totals ─────────────────────────────
 print(f"\n{SEP}")
 print("[13] Financial reconciliation...")
+set_check(13, "Financial reconciliation")
 
 TOLERANCE_PCT = 5.0  # warn if > 5% gap between sanction and ledger totals
 
@@ -489,6 +521,26 @@ if warnings:
     print("\n  Warnings (resolve before publishing results):")
     for w in warnings:
         print(f"    ⚠️  {w}")
+
+# ── Save JSON Report ──────────────────────────────────────────────────────
+report_data = {
+    "generated_at": pd.Timestamp.now().isoformat(),
+    "summary": {
+        "total_checks": len(check_records),
+        "passed": sum(1 for c in check_records if c["status"] == "PASS"),
+        "warnings": len(warnings),
+        "failures": len(failures),
+        "input_warnings": len(input_warnings),
+        "output_warnings": len(warnings) - len(input_warnings) if output_checks_ran else 0,
+        "overall_status": "FAIL" if failures else ("WARN" if warnings else "PASS")
+    },
+    "checks": check_records
+}
+
+report_file = CLEAN_DIR / "data_quality_report.json"
+with open(report_file, "w") as f:
+    json.dump(report_data, f, indent=2)
+print(f"\n  ✓ Saved data quality report -> {report_file}")
 
 if failures:
     print("\n  CRITICAL FAILURES (pipeline halted):")

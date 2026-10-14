@@ -69,13 +69,19 @@ def get_top_k_indices(X, seeds, k=300, max_samples=1024):
         scores += -iso.score_samples(X)
     return set(pd.Series(scores).nlargest(k).index)
 
+stability_records = {}
 for name, matrix in [("Completed", X_comp), ("In-Progress", X_prog)]:
     top_A = get_top_k_indices(matrix, seeds=range(0, 10), k=300)
     top_B = get_top_k_indices(matrix, seeds=range(10, 20), k=300)
     jaccard = len(top_A & top_B) / len(top_A | top_B)
     shared = len(top_A & top_B)
-    status = "✓ PASS (stable)" if jaccard >= 0.90 else "⚠️ WARNING (unstable)"
-    print(f"  • {name:<12} Top-300 Shared: {shared:>3} / 300 | Jaccard Index: {jaccard:.4f}  {status}")
+    status = "PASS" if jaccard >= 0.90 else "WARN"
+    stability_records[name] = {
+        "shared_top_300": int(shared),
+        "jaccard_index": float(round(jaccard, 4)),
+        "status": status
+    }
+    print(f"  • {name:<12} Top-300 Shared: {shared:>3} / 300 | Jaccard Index: {jaccard:.4f}  {'✓ PASS (stable)' if status == 'PASS' else '⚠️ WARNING (unstable)'}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. SYNTHETIC ANOMALY INJECTION BENCHMARK (5 Independent Held-Out Trials)
@@ -345,5 +351,101 @@ For each Work ID in the sheet:
 print(f"  ✓ Exported {len(audit_export)} unique works (matched-control design) -> {out_sample_file}")
 print(f"  ✓ Exported audit key for post-audit validation           -> {key_file}")
 print(f"  ✓ Saved standalone reviewer rubric                      -> {rubric_file}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. EXPORT STRUCTURED JSON METRICS & DIAGNOSTICS FOR APPLICATION / API
+# ─────────────────────────────────────────────────────────────────────────────
+import json
+
+eval_results = {
+    "generated_at": pd.Timestamp.now().isoformat(),
+    "cohort_sizes": {
+        "total_works_matrix": int(len(df)),
+        "completed_works": int(len(X_comp)),
+        "in_progress_works": int(len(X_prog)),
+    },
+    "seed_stability": stability_records,
+    "synthetic_benchmark": {
+        "num_trials": int(N_TRIALS),
+        "train_ratio": float(TRAIN_RATIO),
+        "test_ratio": float(round(1 - TRAIN_RATIO, 2)),
+        "num_injected_anomalies": 300,
+        "injected_base_rate_pct": float(round(base_rate_pct, 2)),
+        "isolation_forest": {
+            "roc_auc_mean": float(round(if_arr[:,0].mean(), 4)),
+            "roc_auc_std": float(round(if_arr[:,0].std(), 4)),
+            "precision_at_2pct_mean": float(round(if_arr[:,1].mean(), 4)),
+            "precision_at_2pct_std": float(round(if_arr[:,1].std(), 4)),
+            "recall_at_2pct_mean": float(round(if_arr[:,2].mean(), 4)),
+            "recall_at_2pct_std": float(round(if_arr[:,2].std(), 4)),
+            "type_a_cost_recall_mean": float(round(if_arr[:,3].mean(), 4)),
+            "type_a_cost_recall_std": float(round(if_arr[:,3].std(), 4)),
+            "type_b_count_recall_mean": float(round(if_arr[:,4].mean(), 4)),
+            "type_b_count_recall_std": float(round(if_arr[:,4].std(), 4)),
+            "type_c_timeline_recall_mean": float(round(if_arr[:,5].mean(), 4)),
+            "type_c_timeline_recall_std": float(round(if_arr[:,5].std(), 4)),
+        },
+        "robust_z_score": {
+            "roc_auc_mean": float(round(z_arr[:,0].mean(), 4)),
+            "roc_auc_std": float(round(z_arr[:,0].std(), 4)),
+            "precision_at_2pct_mean": float(round(z_arr[:,1].mean(), 4)),
+            "precision_at_2pct_std": float(round(z_arr[:,1].std(), 4)),
+            "recall_at_2pct_mean": float(round(z_arr[:,2].mean(), 4)),
+            "recall_at_2pct_std": float(round(z_arr[:,2].std(), 4)),
+            "type_a_cost_recall_mean": float(round(z_arr[:,3].mean(), 4)),
+            "type_a_cost_recall_std": float(round(z_arr[:,3].std(), 4)),
+            "type_b_count_recall_mean": float(round(z_arr[:,4].mean(), 4)),
+            "type_b_count_recall_std": float(round(z_arr[:,4].std(), 4)),
+            "type_c_timeline_recall_mean": float(round(z_arr[:,5].mean(), 4)),
+            "type_c_timeline_recall_std": float(round(z_arr[:,5].std(), 4)),
+        }
+    },
+    "clean_data_baseline_agreement": {
+        "top_300_shared_count": int(shared_baseline),
+        "top_300_overlap_pct": float(round(shared_baseline / 300, 4)),
+    },
+    "methodology": (
+        "Because public procurement datasets lack verified ground-truth fraud labels, the model is evaluated via: "
+        "(1) Run-to-run seed stability (Jaccard index of top-300 works across seed ensembles), "
+        "(2) 5-trial held-out synthetic anomaly injection (training strictly on clean 70% split, evaluating on 30% held-out test split with 300 multi-dimensional perturbations), "
+        "(3) Agreement with a non-parametric Robust Z-score baseline on unperturbed data, and "
+        "(4) A matched-control blind audit against works ranked > 300. These tests evaluate outlier recovery and ranking stability, not verified fraud detection accuracy."
+    ),
+    "limitations": (
+        "Screening scores reflect relative multi-dimensional extremity, predominantly payment fragmentation (many installments and suppliers). "
+        "Real-world precision or accuracy cannot be measured without independent field verification or completed audit labels."
+    )
+}
+
+eval_results_file = CLEAN_DIR / "evaluation_results.json"
+with open(eval_results_file, "w") as f:
+    json.dump(eval_results, f, indent=2)
+
+diagnostics_data = {
+    "generated_at": pd.Timestamp.now().isoformat(),
+    "n_top_ranked": int(len(top_50)),
+    "n_matched_controls": int(n_matched),
+    "top_50_medians": {
+        "installments": float(top_50.Settled_Count.median()),
+        "vendors": float(top_50.Unique_Vendors_Count.median()),
+        "budget": float(top_50.Sanction_Amount.median())
+    },
+    "control_medians": {
+        "installments": float(matched_df.Settled_Count.median()),
+        "vendors": float(matched_df.Unique_Vendors_Count.median()),
+        "budget": float(matched_df.Sanction_Amount.median())
+    },
+    "standardized_mean_differences": {k: float(round(v, 4)) for k, v in smd.items()},
+    "controls_min_rank": float(matched_df.rank_in_stage.min()),
+    "imbalance_warning": bool((smd.abs() > 0.5).any()),
+    "notes": "Controls drawn strictly from works ranked > 300. Top-50 ranked works have higher fragmentation because the model ranks heavily fragmented works in its top tier."
+}
+
+diagnostics_file = CLEAN_DIR / "audit_matching_diagnostics.json"
+with open(diagnostics_file, "w") as f:
+    json.dump(diagnostics_data, f, indent=2)
+
+print(f"  ✓ Saved machine-readable evaluation results -> {eval_results_file}")
+print(f"  ✓ Saved audit matching diagnostics        -> {diagnostics_file}")
 print("=" * 85)
 
