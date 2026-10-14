@@ -198,10 +198,10 @@ print("    (64.7% overlap; the two methods rank ~35% of their top works differen
 print("     reflecting different sensitivity to multi-variable geometry versus marginal extremes.)")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. DE-BIASED BLIND HUMAN REVIEW SAMPLE & RUBRIC
+# 4. MATCHED-CONTROL BLIND HUMAN REVIEW SAMPLE & RUBRIC
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n" + "─" * 85)
-print("[4] Generating De-biased Blind Human Audit Sample...")
+print("[4] Generating Matched-Control Blind Human Audit Sample...")
 master_path = CLEAN_DIR / "mplads_360_master.csv"
 master_df = pd.read_csv(master_path, low_memory=False)
 
@@ -216,23 +216,53 @@ top_50 = comp_works.sort_values("rank_in_stage").head(50).copy()
 top_50["Cohort"] = "Top_Ranked"
 top_50_ids = set(top_50["Work ID"])
 
-# Sample 50 random works STRICTLY excluding the top 50 (ensures 100 distinct works)
-candidate_pool = comp_works[~comp_works["Work ID"].isin(top_50_ids)]
-rand_50 = candidate_pool.sample(n=50, random_state=42).copy()
-rand_50["Cohort"] = "Random_Sample"
+# Build MATCHED CONTROLS: for each top-50 work, find a non-top work with the closest
+# profile in Settled_Count, Unique_Vendors_Count, and Sanction_Amount.
+# This tests whether the model surfaces genuine signals beyond simply counting installments/vendors.
+from sklearn.preprocessing import StandardScaler
+
+non_top = comp_works[~comp_works["Work ID"].isin(top_50_ids)].copy().reset_index(drop=True)
+
+match_cols = ["Settled_Count", "Unique_Vendors_Count", "Sanction_Amount"]
+scaler = StandardScaler()
+X_non_top_scaled = scaler.fit_transform(non_top[match_cols].fillna(0))
+X_top_50_scaled = scaler.transform(top_50[match_cols].fillna(0))
+
+used_indices = set()
+matched_indices = []
+
+for i in range(len(top_50)):
+    diffs = X_non_top_scaled - X_top_50_scaled[i]
+    dists = np.sum(diffs**2, axis=1)
+    order = np.argsort(dists)
+    for cand in order:
+        if cand not in used_indices:
+            used_indices.add(cand)
+            matched_indices.append(cand)
+            break
+
+matched_df = non_top.iloc[matched_indices].copy()
+matched_df["Cohort"] = "Matched_Control"
+n_matched = len(matched_df)
+print(f"  • Matched controls found: {n_matched} / 50 (nearest-neighbor profile on installments, vendors, and cost)")
+print(f"    - Top 50 medians  : {top_50.Settled_Count.median():.0f} installments, {top_50.Unique_Vendors_Count.median():.0f} vendors, ₹{top_50.Sanction_Amount.median():,.0f} budget")
+print(f"    - Control medians : {matched_df.Settled_Count.median():.0f} installments, {matched_df.Unique_Vendors_Count.median():.0f} vendors, ₹{matched_df.Sanction_Amount.median():,.0f} budget")
 
 # Combine and shuffle
-sample = pd.concat([top_50, rand_50]).sample(frac=1.0, random_state=123).reset_index(drop=True)
+sample = pd.concat([top_50, matched_df]).sample(frac=1.0, random_state=123).reset_index(drop=True)
 
-# De-bias: Exclude political and regional identifiers (MP Name, Constituency, State)
+# The audit sheet should NOT contain model-input features (installments, vendors, amounts).
+# Instead, provide only Work ID and description, and instruct reviewers to verify
+# against the MPLADS portal, completion photos, and vendor records.
 audit_export = sample[[
-    "Work ID", "Work", "Sanction_Amount", "Total_Exp_Settled",
-    "Settled_Count", "Unique_Vendors_Count", "Execution_Duration_Days"
+    "Work ID", "Work", "State", "Constituency"
 ]].copy()
+audit_export["Portal_URL"] = "https://www.mplads.gov.in/"
 audit_export["Audit_Verdict"] = ""  # Options: Routine | Needs document check | Inconsistent data
 audit_export["Auditor_Notes"] = ""
 
 # Assert distinctness
+assert n_matched == 50, f"Expected 50 matched controls, found {n_matched}"
 assert len(audit_export) == 100, f"Expected 100 audit works, found {len(audit_export)}"
 assert audit_export["Work ID"].nunique() == 100, "Duplicate Work IDs found in audit sample"
 
@@ -241,36 +271,66 @@ audit_export.to_csv(out_sample_file, index=False)
 
 # Save ground-truth audit key separately for post-audit precision calculation
 key_file = CLEAN_DIR / "manual_audit_sample_key.csv"
-sample[["Work ID", "Cohort", "rank_in_stage", "anomaly_score"]].to_csv(key_file, index=False)
+sample[["Work ID", "Cohort", "rank_in_stage", "anomaly_score",
+        "Settled_Count", "Unique_Vendors_Count", "Sanction_Amount"]].to_csv(key_file, index=False)
 
 # Save standalone rubric markdown file next to the audit sheet
 rubric_file = CLEAN_DIR / "manual_audit_rubric.md"
 with open(rubric_file, "w") as f:
     f.write("""# Manual Audit Review Rubric (MPLADS Anomaly Inspection)
 
-This rubric provides a standardized guide for human reviewers auditing the 100-work blind sample (`manual_audit_sample_blind.csv`). All anomaly scores and cohort labels have been hidden to ensure an unbiased audit.
+This rubric provides a standardized guide for human reviewers auditing the blind sample
+(`manual_audit_sample_blind.csv`). All anomaly scores, cohort labels, and model-input
+features (installment counts, vendor counts, payment amounts) have been hidden to ensure
+an unbiased audit.
 
-### Classification Categories:
+## How to Review Each Work
 
-1. **`Routine`**
-   - Work characteristics are fully proportionate and standard for civic works.
-   - 1–2 vendors and 1–3 payment installments.
-   - Cost aligns with typical projects of this category.
-   - Execution duration is within standard construction windows (30–365 days).
+For each Work ID in the sheet:
 
-2. **`Needs document check`**
-   - High payment fragmentation (e.g., 6+ installments for a small work).
-   - High vendor count (e.g., 4+ distinct contractors on a minor project).
-   - Extreme execution duration (>500 days) or substantial delay before first disbursement.
-   - Cost appears high relative to project description, warranting review of the original Administrative Sanction order.
+1. **Look up the work on the [MPLADS Portal](https://www.mplads.gov.in/)** using the Work ID.
+2. **Check the completion photo** (if available): Does it show a plausible finished structure
+   matching the work description?
+3. **Check the vendor names**: Are there repeated or suspiciously similar vendor names?
+   Are vendor names plausible for the type of work?
+4. **Check the payment timeline**: Do the payment dates look reasonable for the type of
+   construction described?
+5. **Cross-reference the work description** against the reported cost and location.
 
-3. **`Inconsistent data`**
-   - Conflicting or implausible timeline sequences (e.g., 0-day duration with full disbursement).
-   - Severe cost disparity (e.g., extreme high cost with minimal physical scope).
-   - Bizarre installment-to-amount ratios suggesting potential tender splitting or ledger entry error.
+## Classification Categories
+
+### 1. `Routine`
+- The portal page, photos, vendor names, and payment timeline are all consistent with a
+  standard civic works project.
+- Nothing unusual stands out from the external records.
+
+### 2. `Needs document check`
+- The portal page or photos raise a question that can't be resolved without reviewing the
+  original Administrative Sanction order or physical inspection report.
+- Examples: no completion photo despite reported completion; vendor name appears generic
+  or repeated across multiple works; cost seems disproportionate for the described scope;
+  work description is vague (e.g. "Misc. works").
+- Execution duration is outside typical construction windows (<7 days or >365 days for
+  the described scope), warranting verification.
+
+### 3. `Inconsistent data`
+- The portal records contain clear contradictions or implausible entries.
+- Examples: completion date precedes sanction date; full disbursement with 0-day duration;
+  the described physical scope (e.g. "Installation of 1 handpump") does not match the
+  reported cost; work description and location do not match the MP's constituency.
+
+## Important Notes
+
+- **Do not use payment counts, vendor counts, or amounts as primary classification signals.**
+  These features are already captured by the model; judging by them would be circular.
+- **Use external information** (portal page, photos, vendor names, dates) to form your verdict.
+- The sample contains both model-flagged works and matched controls with similar payment
+  profiles. Your job is to determine whether flagged works differ from their controls on
+  evidence visible only from external records.
 """)
 
-print(f"  ✓ Exported 100 unique works (de-biased, unlabelled) -> {out_sample_file}")
-print(f"  ✓ Exported audit key for post-audit validation     -> {key_file}")
-print(f"  ✓ Saved standalone reviewer rubric                -> {rubric_file}")
+print(f"  ✓ Exported {len(audit_export)} unique works (matched-control design) -> {out_sample_file}")
+print(f"  ✓ Exported audit key for post-audit validation           -> {key_file}")
+print(f"  ✓ Saved standalone reviewer rubric                      -> {rubric_file}")
 print("=" * 85)
+

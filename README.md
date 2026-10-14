@@ -129,19 +129,21 @@ python3 src/evaluate_model.py
 - **21 Post-Cutoff Missing Photos** — completions after 15 May 2026 lacking photo proof (photos appear required after that date; 9,279 earlier completions predate the requirement)
 - **10,687 Stalled Unpaid** — sanctioned >180 days ago with zero payments
 
-### ML Anomaly Scoring & Synthetic Benchmark
-Because no ground-truth fraud labels exist in public procurement datasets, the model is evaluated via **reproducibility across random seeds, controlled synthetic outlier injection, non-parametric baseline comparison, and blind human review**:
+### ML Exploratory Anomaly Ranking & Synthetic Benchmark
+The Isolation Forest ranks works with **unusually fragmented payment profiles** (many installments, many vendors, high cost relative to peers). This is a known concern in public procurement, but it can also reflect legitimate multi-supplier construction. The model is an exploratory screening tool for prioritizing manual investigation, not a fraud detector.
+
+Because no ground-truth fraud labels exist, the model is evaluated via **reproducibility, synthetic outlier injection, baseline comparison, and matched-control blind human review**:
 
 1. **Stratified Scoring Architecture:** Works are split into separate Completed (36,989) and In-Progress (21,061) cohorts to avoid duration and partial-spend confounding.
 2. **Fine-Grained Peer Benchmarks:** Costs are benchmarked against the median for specific `[Work, State]` pairs (91.6% tier 1, 8.0% national work tier 2, 0.4% global fallback).
 3. **Run-to-Run Stability:** 10-seed ensemble averaging with `max_samples=1024` achieves a **0.9355 Jaccard overlap** on Completed works and **0.9672** on In-Progress works for the top-300 works across independent seed ensembles.
-4. **Synthetic Outlier Injection Benchmark (5 Independent Held-Out Trials):** Evaluated strictly on a 70% clean train / 30% held-out test split with 300 planted multi-dimensional anomalies (cost surges, vendor fragmentation, timeline anomalies):
+4. **Synthetic Outlier Injection Benchmark (5 Independent Held-Out Trials, Completed Works):** Evaluated strictly on a 70% clean train / 30% held-out test split with 300 planted multi-dimensional anomalies (cost surges, vendor fragmentation, timeline anomalies):
    - **Isolation Forest:** ROC-AUC **0.870 ± 0.004** | Precision@2% **19.9% ± 2.3%** | Recall@2% **14.7% ± 1.7%** (Type A Cost: 9.0%, Type B Count: 33.4%, Type C Timeline: 1.6%).
    - **Robust Z-Score Baseline:** ROC-AUC **0.790 ± 0.011** | Precision@2% **16.5% ± 1.5%** | Recall@2% **12.1% ± 1.1%** (Type A Cost: 7.8%, Type B Count: 27.0%, Type C Timeline: 1.6%).
-   - *Base Rate Context:* The injected test base rate is 2.7%; Precision@2% of 19.9% represents a **~7.4× lift over random guessing**.
+   - *Base Rate Context:* The injected test base rate is 2.7%; Precision@2% of 19.9% represents a **~7.4× lift over random guessing**. The IF gain over the Robust Z-Score baseline is modest.
    - *Timeline Limitation:* Both models show low recall (~1.6%) on injected timeline compression because single-feature values (0-day payment lag, 1-day approval) already appear naturally in 3–4% of legitimate works.
 5. **Clean Data Baseline Agreement:** Top-300 works share **64.7% overlap (194/300)** with non-parametric Robust Z-Scores on clean untouched data. The two methods rank ~35% of their top works differently, reflecting different sensitivity to multi-variable geometry versus marginal extremes.
-6. **Interpretability & De-biased Blind Audit:** Top anomalies are tagged with extreme feature indicators (≥98th percentile). A de-biased 100-work blind audit sheet (100 distinct works, political and regional identifiers removed) is exported to `data/clean/manual_audit_sample_blind.csv` alongside a standardized audit rubric in `data/clean/manual_audit_rubric.md` (classifying works as *Routine*, *Needs document check*, or *Inconsistent data*).
+6. **Matched-Control Blind Audit:** A blind audit sheet pairs top-ranked works against **matched controls** (non-flagged works with similar installment counts, vendor counts, and budget) to test whether the model surfaces information beyond payment fragmentation. Reviewers are directed to verify works against the [MPLADS Portal](https://www.mplads.gov.in/), completion photos, and vendor records — not model-input features. No audit precision is claimed until human labels are collected.
 
 ---
 
