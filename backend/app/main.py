@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +12,18 @@ from backend.app.core.errors import (
 )
 from backend.app.api.v1.api import api_router
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Enforce startup token check: if auth is enabled, fail at startup if none are set
+    if settings.AUDIT_AUTH_ENABLED and not settings.REVIEWER_TOKENS and not settings.IS_TESTING:
+        raise RuntimeError(
+            "CRITICAL STARTUP CONFIGURATION ERROR: AUDIT_AUTH_ENABLED is True but no reviewer tokens are configured. "
+            "Set AUDIT_REVIEWER_TOKENS in your environment or .env file before starting the application."
+        )
+    yield
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="2.0.0",
@@ -18,6 +31,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",
+    lifespan=lifespan,
 )
 
 # CORS - restricted to configured origins, credentials disabled for public API
@@ -26,7 +40,7 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-Reviewer-Token"],
 )
 
 # Exception handlers

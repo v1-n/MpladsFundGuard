@@ -1,5 +1,10 @@
+import json
+import logging
 from pathlib import Path
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -26,16 +31,12 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
     ]
     LOG_LEVEL: str = "INFO"
+    IS_TESTING: bool = False
     
     # Audit Security & Authentication
     AUDIT_AUTH_ENABLED: bool = True
-    REVIEWER_TOKENS: dict[str, dict[str, str]] = {
-        "auditor-token-1": {"reviewer_id": "Auditor-1", "role": "reviewer"},
-        "auditor-token-2": {"reviewer_id": "Auditor-2", "role": "reviewer"},
-        "auditor-test-token": {"reviewer_id": "Auditor-Test-Alpha", "role": "reviewer"},
-        "auditor-beta-token": {"reviewer_id": "Auditor-Test-Beta", "role": "reviewer"},
-        "lead-admin-token": {"reviewer_id": "Lead-Auditor", "role": "admin"},
-    }
+    AUDIT_REVIEWER_TOKENS: str = ""
+    REVIEWER_TOKENS: dict[str, dict[str, str]] = {}
     
     # Pagination
     PAGE_SIZE_DEFAULT: int = 50
@@ -48,6 +49,31 @@ class Settings(BaseSettings):
         "They are not evidence of fraud or wrongdoing."
     )
     
+    @model_validator(mode="after")
+    def parse_tokens(self) -> "Settings":
+        raw = (self.AUDIT_REVIEWER_TOKENS or "").strip()
+        if raw:
+            if raw.startswith("{"):
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict):
+                        self.REVIEWER_TOKENS = parsed
+                except Exception as e:
+                    logger.error(f"Failed to parse AUDIT_REVIEWER_TOKENS as JSON: {e}")
+            else:
+                tokens_dict = {}
+                for entry in raw.split(","):
+                    parts = entry.strip().split(":")
+                    if len(parts) >= 2:
+                        tok = parts[0].strip()
+                        rev_id = parts[1].strip()
+                        role = parts[2].strip() if len(parts) >= 3 else "reviewer"
+                        if tok and rev_id:
+                            tokens_dict[tok] = {"reviewer_id": rev_id, "role": role}
+                if tokens_dict:
+                    self.REVIEWER_TOKENS = tokens_dict
+        return self
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

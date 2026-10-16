@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 from fastapi import APIRouter, Query, Path
 from backend.app.schemas.common import ResponseEnvelope, PaginationMeta
 from backend.app.schemas.anomalies import AnomalyItem, AnomalyDetail
@@ -6,6 +6,20 @@ from backend.app.services.anomaly_service import AnomalyService
 from backend.app.core.config import settings
 
 router = APIRouter()
+
+SortByField = Literal[
+    "rank_in_stage",
+    "anomaly_score",
+    "sanction_amount",
+    "total_exp_settled",
+    "total_exp_in_progress",
+    "paid_vs_peer_log",
+    "work_id",
+    "state",
+    "constituency",
+    "n_rule_flags",
+]
+SortOrder = Literal["asc", "desc"]
 
 @router.get("", response_model=ResponseEnvelope[list[AnomalyItem]])
 def list_anomalies(
@@ -15,10 +29,10 @@ def list_anomalies(
     min_score: Optional[float] = Query(None, description="Minimum anomaly score"),
     max_score: Optional[float] = Query(None, description="Maximum anomaly score"),
     search: Optional[str] = Query(None, description="Search work id, work description, constituency, MP"),
-    sort_by: str = Query("rank_in_stage", description="Column to sort by"),
-    sort_order: str = Query("asc", description="asc or desc"),
+    sort_by: SortByField = Query("rank_in_stage", description="Allowlisted column to sort by"),
+    sort_order: SortOrder = Query("asc", description="asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=500, description="Page size"),
+    page_size: int = Query(settings.PAGE_SIZE_DEFAULT, ge=1, le=settings.PAGE_SIZE_MAX, description=f"Page size (max {settings.PAGE_SIZE_MAX})"),
 ):
     items, total_records = AnomalyService.get_anomalies(
         stage=stage,

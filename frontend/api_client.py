@@ -211,8 +211,8 @@ class FundGuardAPIClient:
         if actual_reviewer:
             payload["reviewer_id"] = actual_reviewer
 
-        token = reviewer_token or os.getenv("AUDITOR_TOKEN", "auditor-token-1")
-        headers = {"Authorization": f"Bearer {token}"}
+        token = reviewer_token or os.getenv("AUDITOR_TOKEN", "")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         r = self._get_client().post(f"{self.base_url}/audit/reviews", json=payload, headers=headers)
         return self._handle_response(r).get("data", {})
 
@@ -224,8 +224,8 @@ class FundGuardAPIClient:
         params = {}
         if reviewer_id:
             params["reviewer_id"] = reviewer_id
-        token = reviewer_token or os.getenv("AUDITOR_TOKEN", "auditor-token-1")
-        headers = {"Authorization": f"Bearer {token}"}
+        token = reviewer_token or os.getenv("AUDITOR_TOKEN", "")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         r = self._get_client().get(f"{self.base_url}/audit/reviews", params=params, headers=headers)
         return self._handle_response(r).get("data", {}).get("reviews", [])
 

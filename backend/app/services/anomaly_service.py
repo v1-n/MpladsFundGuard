@@ -5,6 +5,20 @@ from backend.app.schemas.anomalies import AnomalyItem, AnomalyDetail
 from backend.app.core.errors import NotFoundException
 from backend.app.core.config import settings
 
+SORT_COLUMN_MAPPING: dict[str, str] = {
+    "rank_in_stage": "rank_in_stage",
+    "anomaly_score": "anomaly_score",
+    "sanction_amount": "Sanction_Amount",
+    "total_exp_settled": "Total_Exp_Settled",
+    "total_exp_in_progress": "Total_Exp_In_Progress",
+    "paid_vs_peer_log": "paid_vs_peer_log",
+    "work_id": "Work ID",
+    "state": "State",
+    "constituency": "Constituency",
+    "n_rule_flags": "n_rule_flags",
+}
+
+
 class AnomalyService:
     @staticmethod
     def get_anomalies(
@@ -46,10 +60,11 @@ class AnomalyService:
         if total_records == 0:
             return [], 0
             
-        # Sorting
+        # Sorting strictly against allowlisted columns
         ascending = (sort_order.lower() == "asc")
-        if sort_by in scores.columns:
-            scores = scores.sort_values(by=sort_by, ascending=ascending)
+        sort_col = SORT_COLUMN_MAPPING.get(sort_by, "rank_in_stage")
+        if sort_col in scores.columns:
+            scores = scores.sort_values(by=sort_col, ascending=ascending)
         else:
             scores = scores.sort_values(by="rank_in_stage", ascending=True)
             

@@ -61,41 +61,48 @@ with tab_audit:
         st.stop()
 
     # Reviewer Authentication & Identity
-    col_rev1, col_rev2 = st.columns([1, 1])
-    with col_rev1:
-        auth_profile = st.selectbox(
-            "Reviewer Session / Identity",
-            options=["Auditor-1 (auditor-token-1)", "Auditor-2 (auditor-token-2)", "Lead-Auditor [Admin] (lead-admin-token)", "Custom Reviewer Token"],
-            index=0,
-            help="Authenticates your review session. Identity is derived directly by the backend from this credential.",
-        )
-    with col_rev2:
-        if auth_profile == "Custom Reviewer Token":
-            reviewer_token = st.text_input("Enter Reviewer Auth Token", value="", type="password")
-        else:
-            token_map = {
-                "Auditor-1 (auditor-token-1)": "auditor-token-1",
-                "Auditor-2 (auditor-token-2)": "auditor-token-2",
-                "Lead-Auditor [Admin] (lead-admin-token)": "lead-admin-token",
-            }
-            reviewer_token = token_map.get(auth_profile, "auditor-token-1")
+    if "reviewer_auth_token" not in st.session_state:
+        st.session_state.reviewer_auth_token = ""
 
-        st.caption(f"🔒 Authenticated Session Active • All review records durably stored in SQLite database.")
+    col_rev1, col_rev2 = st.columns([2, 1])
+    with col_rev1:
+        reviewer_token = st.text_input(
+            "Reviewer Authentication Token",
+            value=st.session_state.reviewer_auth_token,
+            type="password",
+            placeholder="Enter your assigned reviewer access token...",
+            help="Authentication token is required to submit or access audit reviews. Reviewer identity is derived securely by the server.",
+        )
+        if reviewer_token != st.session_state.reviewer_auth_token:
+            st.session_state.reviewer_auth_token = reviewer_token
+    with col_rev2:
+        if reviewer_token:
+            st.caption("🔒 **Authenticated Session Active**")
+            st.caption("All reviews are saved securely in SQLite database.")
+        else:
+            st.caption("⚠️ **Authentication Required**")
+            st.caption("Enter your token to load and submit reviews.")
 
     # Load previously persisted reviews for this authenticated reviewer from backend
-    try:
-        saved_reviews_list = api_client.get_audit_reviews(reviewer_token=reviewer_token)
-        saved_reviews_map = {r["work_id"]: r for r in saved_reviews_list}
-        active_reviewer_id = saved_reviews_list[0]["reviewer_id"] if saved_reviews_list else auth_profile.split(" ")[0]
-    except Exception as e:
-        saved_reviews_map = {}
-        active_reviewer_id = auth_profile.split(" ")[0]
+    saved_reviews_map = {}
+    active_reviewer_id = "Unauthenticated Reviewer"
+    if reviewer_token:
+        try:
+            saved_reviews_list = api_client.get_audit_reviews(reviewer_token=reviewer_token)
+            saved_reviews_map = {r["work_id"]: r for r in saved_reviews_list}
+            if saved_reviews_list:
+                active_reviewer_id = saved_reviews_list[0]["reviewer_id"]
+            else:
+                active_reviewer_id = "Authenticated Reviewer"
+        except Exception as e:
+            st.warning(f"Unable to load existing reviews: {e}")
+            saved_reviews_map = {}
 
     # Progress tracking
     completed_reviews = len(saved_reviews_map)
     st.progress(completed_reviews / len(sample_items))
     st.caption(
-        f"**Audit Progress for {active_reviewer_id}:** {completed_reviews} of {len(sample_items)} works reviewed "
+        f"**Audit Progress ({active_reviewer_id}):** {completed_reviews} of {len(sample_items)} works reviewed "
         f"({completed_reviews / len(sample_items) * 100:.1f}%)"
     )
 
@@ -142,7 +149,9 @@ with tab_audit:
         )
 
     if st.button("💾 Persist Verdict to Backend", type="primary", key=f"save_{selected_id}"):
-        if not new_verdict:
+        if not reviewer_token:
+            st.error("Authentication required: Please enter your Reviewer Authentication Token above before submitting.")
+        elif not new_verdict:
             st.error("Please select a verdict before saving.")
         else:
             try:
@@ -183,9 +192,10 @@ with tab_audit:
     audit_df = pd.DataFrame(table_rows)
     styled_table(audit_df)
 
+    safe_rev = active_reviewer_id.lower().replace(" ", "_").replace("[", "").replace("]", "")
     render_csv_download_button(
         df=audit_df,
-        filename=f"mplads_manual_audit_{reviewer_id}.csv",
+        filename=f"mplads_manual_audit_{safe_rev}.csv",
         button_label="📥 Export Audit Sheet with Recorded Verdicts to Sanitized CSV",
     )
 

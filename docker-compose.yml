@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   backend:
     build:
@@ -8,13 +6,15 @@ services:
     container_name: mplads_backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     volumes:
       - ./data:/app/data
     environment:
-      - HOST=0.0.0.0
-      - PORT=8000
-      - LOG_LEVEL=INFO
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AUDIT_AUTH_ENABLED=${AUDIT_AUTH_ENABLED:-true}
+      - AUDIT_REVIEWER_TOKENS=${AUDIT_REVIEWER_TOKENS:-}
 
   frontend:
     build:
@@ -25,6 +25,6 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - BACKEND_URL=http://backend:8000
+      - BACKEND_URL=http://backend:${PORT:-8000}
     depends_on:
       - backend

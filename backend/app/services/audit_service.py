@@ -61,6 +61,22 @@ class AuditService:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_reviews_reviewer ON audit_reviews(reviewer_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_reviews_work ON audit_reviews(work_id);")
 
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_review_history (
+                    history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    work_id TEXT NOT NULL,
+                    reviewer_id TEXT NOT NULL,
+                    verdict TEXT NOT NULL,
+                    notes TEXT NOT NULL DEFAULT '',
+                    action TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL
+                );
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_history_reviewer ON audit_review_history(reviewer_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_history_work ON audit_review_history(work_id);")
+
         # Migrate legacy reviews from JSON if table is newly created and legacy JSON exists
         self._migrate_legacy_json_if_needed()
 
@@ -175,6 +191,23 @@ class AuditService:
         notes = (submission.notes or "").strip()
 
         with self._get_connection() as conn:
+            # Check existing to determine action (INSERT vs UPDATE)
+            existing = conn.execute(
+                "SELECT verdict FROM audit_reviews WHERE work_id = ? AND reviewer_id = ?;",
+                (work_id, effective_reviewer_id),
+            ).fetchone()
+            action = "UPDATE" if existing is not None else "INSERT"
+
+            # 1. Record immutable audit trail in history table
+            conn.execute(
+                """
+                INSERT INTO audit_review_history (work_id, reviewer_id, verdict, notes, action, recorded_at)
+                VALUES (?, ?, ?, ?, ?, ?);
+                """,
+                (work_id, effective_reviewer_id, verdict, notes, action, now_iso),
+            )
+
+            # 2. Upsert current review state
             conn.execute(
                 """
                 INSERT INTO audit_reviews (work_id, reviewer_id, verdict, notes, updated_at)
@@ -248,6 +281,41 @@ class AuditService:
             total_reviews=len(records),
             reviews=records,
         )
+
+    def get_review_history(
+        self,
+        authenticated_reviewer: AuthenticatedReviewer,
+        work_id: Optional[str] = None,
+        target_reviewer_id: Optional[str] = None,
+    ) -> list[dict]:
+        """
+        Retrieves immutable historical audit trail of all review submissions and revisions.
+        Non-admin reviewers may only query their own history.
+        """
+        if authenticated_reviewer.role != "admin":
+            filter_reviewer = authenticated_reviewer.reviewer_id
+        else:
+            filter_reviewer = target_reviewer_id.strip() if target_reviewer_id else None
+
+        query = "SELECT history_id, work_id, reviewer_id, verdict, notes, action, recorded_at FROM audit_review_history"
+        params = []
+        conditions = []
+        if filter_reviewer:
+            conditions.append("LOWER(reviewer_id) = LOWER(?)")
+            params.append(filter_reviewer)
+        if work_id:
+            conditions.append("work_id = ?")
+            params.append(work_id.strip())
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY history_id DESC;"
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, tuple(params))
+            rows = cursor.fetchall()
+
+        return [dict(row) for row in rows]
 
 
 audit_service = AuditService()

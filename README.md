@@ -135,16 +135,21 @@ Run unit and integration tests across the backend, schemas, frontend client, and
 ```bash
 PYTHONPATH=. pytest -v
 ```
-**Verification Coverage (49 passed tests):**
+**Verification Coverage (55 passed tests):**
 - System health and disclaimer validation
 - Overview KPIs, dynamic pipeline provenance, and zero-orphan integrity checks
 - EDA distributions and missing-value endpoints
 - Data quality rules, flags, and pagination
 - State and category fund utilization
 - Multi-dimensional anomaly scoring and detailed traceable dossiers
+- Pagination bounds (PAGE_SIZE_MAX = 200 enforced with HTTP 422)
+- Allowlisted column sorting (unapproved columns rejected with HTTP 422)
 - Synthetic evaluation reproduction and limitation disclosure
 - **Strict Blind Audit Security:** Asserts answer key is never accessible, and verifies blind sample contains no score or cohort fields
-- **Audit Review Authorization & Session Isolation:** Enforces token authentication, prevents reviewer impersonation, and blocks cross-reviewer snooping
+- **Audit Review Authorization & Session Isolation:** Enforces header-only token authentication, prevents reviewer impersonation, and blocks cross-reviewer snooping
+- **Constant-Time Token Verification:** Prevents timing attacks with `hmac.compare_digest`
+- **Immutable Audit Trail:** Durably logs all review submissions and revisions in `audit_review_history` SQLite table
+- **Startup Credential Validation:** Fails at startup if auth is enabled without configured tokens
 - **SQLite ACID Persistence:** Guarantees concurrent write safety and transaction durability across server restarts
 - **Formula Injection Defense:** Verifies CSV export prepends single quotes to dangerous leading characters (`=`, `+`, `-`, `@`, `\t`, `\r`)
 - **Missing Artifacts Behavior:** Verifies 503 response code with exact rebuild instructions

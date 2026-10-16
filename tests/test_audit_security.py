@@ -236,3 +236,98 @@ def test_audit_review_sqlite_persistence_across_restarts(tmp_path):
     assert record.reviewer_id == "Auditor-Restart-Test"
     assert record.verdict == "Normal / Regular"
     assert record.notes == "Testing durable SQLite transactions across restarts"
+
+
+def test_audit_review_query_param_token_rejected(client):
+    # Tokens in query parameters must be rejected to prevent leakage in logs
+    sample_res = client.get("/api/v1/audit/sample")
+    work_id = sample_res.json()["data"]["sample"][0]["work_id"]
+
+    res = client.get(f"/api/v1/audit/reviews?reviewer_token=auditor-test-token")
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "UNAUTHORIZED"
+
+    post_res = client.post(
+        f"/api/v1/audit/reviews?reviewer_token=auditor-test-token",
+        json={"work_id": work_id, "verdict": "Normal / Regular", "notes": ""},
+    )
+    assert post_res.status_code == 401
+    assert post_res.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_audit_review_immutable_history_trail(client):
+    # Submitting multiple times for the same work_id records an immutable audit history trail
+    sample_res = client.get("/api/v1/audit/sample")
+    work_id = sample_res.json()["data"]["sample"][5]["work_id"]
+
+    # Submission 1: Initial verdict
+    payload1 = {
+        "work_id": work_id,
+        "verdict": "Normal / Regular",
+        "notes": "Initial pass",
+    }
+    res1 = client.post("/api/v1/audit/reviews", json=payload1, headers=AUTH_HEADER_ALPHA)
+    assert res1.status_code == 201
+
+    # Submission 2: Revised verdict
+    payload2 = {
+        "work_id": work_id,
+        "verdict": "Irregularity / Suspicious",
+        "notes": "Revised after checking portal invoices",
+    }
+    res2 = client.post("/api/v1/audit/reviews", json=payload2, headers=AUTH_HEADER_ALPHA)
+    assert res2.status_code == 201
+
+    # Query history trail
+    history_res = client.get(f"/api/v1/audit/reviews/history?work_id={work_id}", headers=AUTH_HEADER_ALPHA)
+    assert history_res.status_code == 200
+    hist = history_res.json()["data"]
+
+    # Should contain at least 2 entries for this work and reviewer
+    matching_hist = [h for h in hist if h["work_id"] == work_id and h["reviewer_id"] == "Auditor-Test-Alpha"]
+    assert len(matching_hist) >= 2
+    # Most recent entry is UPDATE, older is INSERT
+    assert matching_hist[0]["action"] == "UPDATE"
+    assert matching_hist[0]["verdict"] == "Irregularity / Suspicious"
+    assert matching_hist[1]["action"] == "INSERT"
+    assert matching_hist[1]["verdict"] == "Normal / Regular"
+
+
+def test_audit_auth_disabled_demo_mode(client):
+    from backend.app.core.config import settings
+
+    # Temporarily disable auth to test demo mode
+    original_setting = settings.AUDIT_AUTH_ENABLED
+    try:
+        settings.AUDIT_AUTH_ENABLED = False
+        res = client.get("/api/v1/audit/reviews")
+        assert res.status_code == 200
+        # In disabled demo mode, reviewer identity defaults to Local-Demo-Reviewer
+        sample_res = client.get("/api/v1/audit/sample")
+        work_id = sample_res.json()["data"]["sample"][2]["work_id"]
+        post_res = client.post(
+            "/api/v1/audit/reviews",
+            json={"work_id": work_id, "verdict": "Normal / Regular", "notes": "Demo submission"},
+        )
+        assert post_res.status_code == 201
+        assert post_res.json()["data"]["reviewer_id"] == "Local-Demo-Reviewer"
+    finally:
+        settings.AUDIT_AUTH_ENABLED = original_setting
+
+
+def test_startup_fails_if_auth_enabled_and_no_tokens():
+    import asyncio
+    from backend.app.main import lifespan
+    from backend.app.core.config import settings
+
+    orig_tokens = settings.REVIEWER_TOKENS.copy()
+    orig_testing = settings.IS_TESTING
+    try:
+        settings.REVIEWER_TOKENS = {}
+        settings.IS_TESTING = False
+        with pytest.raises(RuntimeError, match="CRITICAL STARTUP CONFIGURATION ERROR"):
+            gen = lifespan(None)
+            asyncio.run(gen.__aenter__())
+    finally:
+        settings.REVIEWER_TOKENS = orig_tokens
+        settings.IS_TESTING = orig_testing

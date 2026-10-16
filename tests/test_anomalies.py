@@ -48,3 +48,18 @@ def test_anomaly_detail_not_found(client):
     err = response.json()
     assert "error" in err
     assert err["error"]["code"] == "NOT_FOUND"
+
+def test_anomalies_page_size_max_rejected(client):
+    # Requesting page_size greater than PAGE_SIZE_MAX (200) should be rejected with 422
+    response = client.get("/api/v1/anomalies?page_size=201")
+    assert response.status_code == 422
+    response_500 = client.get("/api/v1/anomalies?page_size=500")
+    assert response_500.status_code == 422
+
+def test_anomalies_sort_by_allowlist_validation(client):
+    # Allowed sort field should succeed
+    response_ok = client.get("/api/v1/anomalies?sort_by=anomaly_score&sort_order=desc&page_size=5")
+    assert response_ok.status_code == 200
+    # Unapproved or internal column should be rejected with 422
+    response_invalid = client.get("/api/v1/anomalies?sort_by=internal_secret_col")
+    assert response_invalid.status_code == 422
