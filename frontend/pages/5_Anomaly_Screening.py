@@ -145,31 +145,33 @@ try:
             try:
                 detail = api_client.get_anomaly_detail(work_id=selected_work)
 
-                st.markdown(f"#### 🔍 Project Dossier: `{detail.get('work_id')}`")
+                st.markdown(f"#### 🔍 Evidence Dossier: `{detail.get('work_id')}`")
 
                 dossier_col1, dossier_col2 = st.columns([3, 1])
                 with dossier_col1:
                     st.info(f"**Work Description:** {detail.get('work_description') or detail.get('work')}")
                 with dossier_col2:
+                    portal_link = detail.get("portal_url") or "https://www.mplads.gov.in/"
                     st.link_button(
-                        "🔗 Open Official MPLADS Portal",
-                        "https://www.mplads.gov.in/",
+                        "🔗 Open Official MoSPI Portal",
+                        portal_link,
                         help="Cross-reference payment bills, sanction orders, and completion photos on the portal",
                     )
 
-                # Dossier Metric Grid
-                dossier_items_1 = [
+                # Summary Metric Grid
+                pct_rank_str = f"Top {100 - detail.get('percentile_in_stage', 99.0):.2f}%" if detail.get("percentile_in_stage") else "—"
+                dossier_top_metrics = [
                     {
                         "label": "Anomaly Score",
                         "value": f"{detail.get('anomaly_score', 0):.4f}",
                         "subtext": "Isolation Forest ensemble score",
-                        "badge": "Priority Metric",
+                        "badge": "Screening Score",
                         "badge_variant": "top1",
                     },
                     {
                         "label": "Rank in Stage",
                         "value": f"#{detail.get('rank_in_stage', 0):,}",
-                        "subtext": f"{detail.get('stage')} cohort rank",
+                        "subtext": f"{detail.get('stage')} ({pct_rank_str})",
                         "badge": "Cohort Rank",
                         "badge_variant": "neutral",
                     },
@@ -177,144 +179,90 @@ try:
                         "label": "Sanctioned Budget",
                         "value": lakh_crore(detail.get("sanction_amount")),
                         "subtext": "Approved allocation",
-                        "badge": "Sanctioned",
+                        "badge": "Budget",
                         "badge_variant": "neutral",
                     },
                     {
                         "label": "Settled Expenditure",
                         "value": lakh_crore(detail.get("total_exp_settled")),
-                        "subtext": "Disbursed expenditure",
+                        "subtext": f"Utilized: {pct(detail.get('utilization_ratio'))}",
                         "badge": "Disbursed",
                         "badge_variant": "pass",
                     },
                 ]
-                metric_grid(dossier_items_1, cols=4)
+                metric_grid(dossier_top_metrics, cols=4)
 
-                dossier_items_2 = [
-                    {
-                        "label": "Payment Installments",
-                        "value": str(detail.get("installments_count", 0)),
-                        "subtext": f"{detail.get('settled_count', 0)} settled • {detail.get('in_progress_count', 0)} pending",
-                        "badge": "Installments",
-                        "badge_variant": "neutral",
-                    },
-                    {
-                        "label": "Unique Vendors",
-                        "value": str(detail.get("vendors_count", 0)),
-                        "subtext": "Paid vendor entities",
-                        "badge": "Vendors",
-                        "badge_variant": "neutral",
-                    },
-                    {
-                        "label": "Primary Vendor",
-                        "value": str(detail.get("primary_vendor", "Unknown"))[:25],
-                        "subtext": "Principal contractor/supplier",
-                        "badge": "Vendor Entity",
-                        "badge_variant": "neutral",
-                    },
-                    {
-                        "label": "Peer Group Median",
-                        "value": lakh_crore(detail.get("peer_median_settled")),
-                        "subtext": f"Benchmark: {detail.get('peer_tier', 'Tier 1')}",
-                        "badge": "Peer Baseline",
-                        "badge_variant": "neutral",
-                    },
-                ]
-                metric_grid(dossier_items_2, cols=4)
-
-                # Reviewer Case Status Management
-                section_header(
-                    title="Case Tracking & Reviewer Notes",
-                    subtitle="Record exploratory review status locally during this session",
-                )
-                case_info = st.session_state.work_investigation_cases.get(
-                    selected_work, {"status": "Unreviewed", "notes": ""}
-                )
-
-                case_status_opts = [
-                    "Unreviewed",
-                    "Under Review",
-                    "Prioritized for Field Verification",
-                    "Resolved (Verified Expected Pattern)",
-                    "Resolved (Data Entry Anomaly)",
-                ]
-                c_idx = case_status_opts.index(case_info["status"]) if case_info["status"] in case_status_opts else 0
-
-                ccol1, ccol2 = st.columns([1, 2])
-                with ccol1:
-                    new_case_status = st.selectbox(
-                        "Review Status",
-                        options=case_status_opts,
-                        index=c_idx,
-                        key=f"c_stat_{selected_work}",
-                    )
-                with ccol2:
-                    new_case_notes = st.text_input(
-                        "Reviewer Case Notes",
-                        value=case_info.get("notes", ""),
-                        placeholder="e.g. Scope justified; multi-component school equipment package...",
-                        key=f"c_notes_{selected_work}",
-                    )
-
-                if st.button("💾 Update Case Note", key=f"save_case_{selected_work}"):
-                    st.session_state.work_investigation_cases[selected_work] = {
-                        "status": new_case_status,
-                        "notes": new_case_notes,
-                    }
-                    st.success(f"Case for `{selected_work}` updated to `{new_case_status}`.")
-                    st.rerun()
-
-                # Detailed breakdown tabs
-                t_factors, t_timeline, t_flags, t_compare = st.tabs([
-                    "🏷️ Contributing Factors & Peer Benchmark",
-                    "⏱️ Timeline & Milestones",
-                    "🚩 Ledger Rule Flags",
-                    "⚖️ Compare with Peer Work",
+                # 4 Core Evidence Tabs
+                t_observed, t_statistical, t_rules, t_case = st.tabs([
+                    "📋 1. Observed Public Ledger Evidence",
+                    "📊 2. Statistical Outlier Deviations & Peers",
+                    "🚩 3. Deterministic Integrity Rule Flags",
+                    "📝 4. Human Review & Case Action",
                 ])
 
-                with t_factors:
-                    st.markdown("**Key Multi-Dimensional Deviation Indicators:**")
-                    st.info(detail.get("top_anomalous_factors") or "No dominant factor identified")
+                with t_observed:
+                    st.markdown("##### 🏛️ Observed Public Ledger Records")
+                    
+                    obs_col1, obs_col2, obs_col3 = st.columns(3)
+                    with obs_col1:
+                        st.markdown(f"- **State:** `{detail.get('state')}`")
+                        st.markdown(f"- **Constituency:** `{detail.get('constituency')}`")
+                        st.markdown(f"- **Hon'ble MP:** `{detail.get('mp_name')}`")
+                        st.markdown(f"- **Work Category:** `{detail.get('work_category') or '—'}`")
+                    with obs_col2:
+                        st.markdown(f"- **Sanctioned Amount:** `{lakh_crore(detail.get('sanction_amount'))}`")
+                        st.markdown(f"- **Settled Expenditure:** `{lakh_crore(detail.get('total_exp_settled'))}`")
+                        st.markdown(f"- **In-Progress Expenditure:** `{lakh_crore(detail.get('total_exp_in_progress'))}`")
+                        st.markdown(f"- **Cost Variance:** `{lakh_crore(detail.get('cost_variance'))}`")
+                    with obs_col3:
+                        st.markdown(f"- **Payment Installments:** `{detail.get('installments_count', 0)}` ({detail.get('settled_count', 0)} settled • {detail.get('in_progress_count', 0)} pending)")
+                        st.markdown(f"- **Unique Vendors:** `{detail.get('vendors_count', 0)}`")
+                        st.markdown(f"- **Primary Vendor:** `{detail.get('primary_vendor', 'Unknown')}`")
+                        photo_status = detail.get("photo_compliance_status", "UNKNOWN")
+                        if "COMPLIANT" in photo_status and "NON" not in photo_status:
+                            st.markdown(f"- **Photo Proof:** 🟢 `{photo_status}`")
+                        elif "NON-COMPLIANT" in photo_status:
+                            st.markdown(f"- **Photo Proof:** 🔴 `{photo_status}`")
+                        else:
+                            st.markdown(f"- **Photo Proof:** 🟡 `{photo_status}`")
 
-                    col_f1, col_f2 = st.columns(2)
-                    with col_f1:
+                    st.markdown("###### ⏱️ Lifecycle Timelines & Progress Durations")
+                    time_col1, time_col2, time_col3 = st.columns(3)
+                    with time_col1:
+                        st.markdown(f"- **Recommended Date:** `{detail.get('recommended_date') or '—'}`")
+                        st.markdown(f"- **Sanction Date:** `{detail.get('sanction_date') or '—'}`")
+                        st.markdown(f"- **Completion Date:** `{detail.get('completion_date') or '—'}`")
+                    with time_col2:
+                        app_days = detail.get('sanction_approval_days')
+                        exec_days = detail.get('execution_duration_days')
+                        lag_days = detail.get('first_payment_lag_days')
+                        st.markdown(f"- **Sanction Approval Lag:** `{app_days:.0f} days`" if app_days is not None else "- **Sanction Approval Lag:** `—`")
+                        st.markdown(f"- **Execution Duration:** `{exec_days:.0f} days`" if exec_days is not None else "- **Execution Duration:** `—`")
+                        st.markdown(f"- **First Payment Lag:** `{lag_days:.0f} days`" if lag_days is not None else "- **First Payment Lag:** `—`")
+                    with time_col3:
+                        st.caption("Timelines are derived strictly from official portal transaction dates and milestone records.")
+
+                with t_statistical:
+                    st.markdown("##### 📈 Statistical Outlier Deviations")
+                    st.info(f"**Dominant Contributing Outlier Factors:** {detail.get('top_anomalous_factors') or 'No single dominant factor'}")
+
+                    stat_col1, stat_col2 = st.columns(2)
+                    with stat_col1:
                         st.markdown(f"- **Peer Benchmark Tier:** `{detail.get('peer_tier', 'Tier 1')}`")
-                        st.markdown(f"- **Log Relative Cost Difference vs Peer Median:** `{detail.get('paid_vs_peer_log', 0):.3f}`")
-                    with col_f2:
-                        u_pct = detail.get("utilization_ratio", 0) * 100 if detail.get("utilization_ratio") else 0
-                        st.markdown(f"- **Utilization Ratio:** `{u_pct:.1f}%`")
-                        st.markdown(f"- **Cost Variance (Settled - Sanctioned):** `{lakh_crore(detail.get('cost_variance', 0))}`")
+                        st.markdown(f"- **Peer Median Settled Expenditure:** `{lakh_crore(detail.get('peer_median_settled'))}`")
+                        log_disp = detail.get('paid_vs_peer_log', 0)
+                        st.markdown(f"- **Log Relative Cost Difference vs Peer Median:** `{log_disp:+.3f}`")
+                    with stat_col2:
+                        st.markdown(f"- **Stage Anomaly Score:** `{detail.get('anomaly_score', 0):.4f}`")
+                        st.markdown(f"- **Rank in Lifecycle Cohort:** `#{detail.get('rank_in_stage', 0):,}`")
+                        if detail.get("percentile_in_stage"):
+                            st.markdown(f"- **Cohort Percentile:** `{detail.get('percentile_in_stage'):.2f}th percentile`")
 
-                with t_timeline:
-                    dcol1, dcol2, dcol3 = st.columns(3)
-                    with dcol1:
-                        st.markdown(f"**Recommended Date:** `{detail.get('recommended_date') or '—'}`")
-                        st.markdown(f"**Sanction Date:** `{detail.get('sanction_date') or '—'}`")
-                        st.markdown(f"**Completion Date:** `{detail.get('completion_date') or '—'}`")
-                    with dcol2:
-                        st.markdown(f"**Sanction Approval Lag:** `{detail.get('sanction_approval_days') or 0:.0f} days`")
-                        st.markdown(f"**Execution Duration:** `{detail.get('execution_duration_days') or 0:.0f} days`")
-                        st.markdown(f"**First Payment Lag:** `{detail.get('first_payment_lag_days') or 0:.0f} days`")
-                    with dcol3:
-                        st.markdown(f"**Settled Disbursements:** `{detail.get('settled_count', 0)}`")
-                        st.markdown(f"**Pending Disbursements:** `{detail.get('in_progress_count', 0)}`")
-
-                with t_flags:
-                    flags = detail.get("rule_flags", {})
-                    active_flags = {k: v for k, v in flags.items() if v == 1}
-                    if active_flags:
-                        st.warning(f"Active Rule Flags Triggered: {list(active_flags.keys())}")
-                    else:
-                        st.success("No deterministic ledger rule flags triggered for this work.")
-
-                    st.caption(f"**Methodology Note:** {detail.get('methodology_note')}")
-
-                with t_compare:
-                    st.markdown("##### Side-by-Side Work Comparison")
+                    st.markdown("###### ⚖️ Compare with Another Project in This Table")
                     compare_candidates = [w for w in work_options if w != selected_work]
                     if compare_candidates:
                         comp_target = st.selectbox(
-                            "Select Second Work to Compare",
+                            "Select Comparison Project",
                             options=compare_candidates,
                             key="comp_sel",
                         )
@@ -322,20 +270,81 @@ try:
                             comp_detail = api_client.get_anomaly_detail(work_id=comp_target)
 
                             comp_table = [
-                                {"Metric": "Work Description", "Selected Work": detail.get("work"), "Comparison Work": comp_detail.get("work")},
-                                {"Metric": "State / Constituency", "Selected Work": f"{detail.get('state')} / {detail.get('constituency')}", "Comparison Work": f"{comp_detail.get('state')} / {comp_detail.get('constituency')}"},
-                                {"Metric": "Anomaly Score", "Selected Work": f"{detail.get('anomaly_score', 0):.4f}", "Comparison Work": f"{comp_detail.get('anomaly_score', 0):.4f}"},
-                                {"Metric": "Rank in Stage", "Selected Work": f"#{detail.get('rank_in_stage', 0)}", "Comparison Work": f"#{comp_detail.get('rank_in_stage', 0)}"},
-                                {"Metric": "Sanctioned Amount", "Selected Work": lakh_crore(detail.get("sanction_amount")), "Comparison Work": lakh_crore(comp_detail.get("sanction_amount"))},
-                                {"Metric": "Settled Expenditure", "Selected Work": lakh_crore(detail.get("total_exp_settled")), "Comparison Work": lakh_crore(comp_detail.get("total_exp_settled"))},
-                                {"Metric": "Payment Installments", "Selected Work": str(detail.get("installments_count", 0)), "Comparison Work": str(comp_detail.get("installments_count", 0))},
-                                {"Metric": "Unique Vendors", "Selected Work": str(detail.get("vendors_count", 0)), "Comparison Work": str(comp_detail.get("vendors_count", 0))},
-                                {"Metric": "Primary Vendor", "Selected Work": detail.get("primary_vendor", "—"), "Comparison Work": comp_detail.get("primary_vendor", "—")},
-                                {"Metric": "Peer Group Median", "Selected Work": lakh_crore(detail.get("peer_median_settled")), "Comparison Work": lakh_crore(comp_detail.get("peer_median_settled"))},
+                                {"Metric": "Work Description", "Selected Project": detail.get("work"), "Comparison Project": comp_detail.get("work")},
+                                {"Metric": "State / Constituency", "Selected Project": f"{detail.get('state')} / {detail.get('constituency')}", "Comparison Project": f"{comp_detail.get('state')} / {comp_detail.get('constituency')}"},
+                                {"Metric": "Anomaly Score", "Selected Project": f"{detail.get('anomaly_score', 0):.4f}", "Comparison Project": f"{comp_detail.get('anomaly_score', 0):.4f}"},
+                                {"Metric": "Rank in Stage", "Selected Project": f"#{detail.get('rank_in_stage', 0)}", "Comparison Project": f"#{comp_detail.get('rank_in_stage', 0)}"},
+                                {"Metric": "Sanctioned Amount", "Selected Project": lakh_crore(detail.get("sanction_amount")), "Comparison Project": lakh_crore(comp_detail.get("sanction_amount"))},
+                                {"Metric": "Settled Expenditure", "Selected Project": lakh_crore(detail.get("total_exp_settled")), "Comparison Project": lakh_crore(comp_detail.get("total_exp_settled"))},
+                                {"Metric": "Payment Installments", "Selected Project": str(detail.get("installments_count", 0)), "Comparison Project": str(comp_detail.get("installments_count", 0))},
+                                {"Metric": "Unique Vendors", "Selected Project": str(detail.get("vendors_count", 0)), "Comparison Project": str(comp_detail.get("vendors_count", 0))},
+                                {"Metric": "Primary Vendor", "Selected Project": detail.get("primary_vendor", "—"), "Comparison Project": comp_detail.get("primary_vendor", "—")},
+                                {"Metric": "Peer Group Median", "Selected Project": lakh_crore(detail.get("peer_median_settled")), "Comparison Project": lakh_crore(comp_detail.get("peer_median_settled"))},
                             ]
                             styled_table(pd.DataFrame(comp_table))
                         except Exception as e:
                             st.error(f"Error loading comparison work: {e}")
+
+                with t_rules:
+                    st.markdown("##### 🚩 Deterministic Ledger Integrity Rules")
+                    flags = detail.get("rule_flags", {})
+                    active_flags = {k: v for k, v in flags.items() if v == 1}
+                    
+                    if active_flags:
+                        st.warning(f"**{len(active_flags)} Canonical Ledger Rule Flag(s) Active:**")
+                        for flag_name in active_flags:
+                            st.markdown(f"- 🔴 **{flag_name.replace('Flag_', '').replace('Integrity_', '').replace('_', ' ')}**")
+                    else:
+                        st.success("✅ **Zero deterministic ledger integrity flags triggered for this project.**")
+
+                    with st.expander("ℹ️ Complete Integrity Flag Inspection", expanded=False):
+                        flag_rows = [{"Rule Name": k, "Status": "FLAGGED (1)" if v == 1 else "PASS (0)"} for k, v in flags.items()]
+                        if flag_rows:
+                            styled_table(pd.DataFrame(flag_rows))
+                        else:
+                            st.caption("No flag fields found for this record.")
+
+                with t_case:
+                    st.markdown("##### 📝 Case Tracking & Reviewer Actions")
+                    case_info = st.session_state.work_investigation_cases.get(
+                        selected_work, {"status": "Unreviewed", "notes": ""}
+                    )
+
+                    case_status_opts = [
+                        "Unreviewed",
+                        "Under Review",
+                        "Prioritized for Field Verification",
+                        "Resolved (Verified Expected Pattern)",
+                        "Resolved (Data Entry Anomaly)",
+                    ]
+                    c_idx = case_status_opts.index(case_info["status"]) if case_info["status"] in case_status_opts else 0
+
+                    ccol1, ccol2 = st.columns([1, 2])
+                    with ccol1:
+                        new_case_status = st.selectbox(
+                            "Review Status",
+                            options=case_status_opts,
+                            index=c_idx,
+                            key=f"c_stat_{selected_work}",
+                        )
+                    with ccol2:
+                        new_case_notes = st.text_input(
+                            "Reviewer Notes",
+                            value=case_info.get("notes", ""),
+                            placeholder="e.g. Scope justified; multi-component school equipment package...",
+                            key=f"c_notes_{selected_work}",
+                        )
+
+                    if st.button("💾 Save Case Note", key=f"save_case_{selected_work}"):
+                        st.session_state.work_investigation_cases[selected_work] = {
+                            "status": new_case_status,
+                            "notes": new_case_notes,
+                        }
+                        st.success(f"Case for `{selected_work}` updated to `{new_case_status}`.")
+                        st.rerun()
+
+                    st.markdown("---")
+                    st.caption(f"**Methodology Note:** {detail.get('methodology_note')}")
 
             except Exception as e:
                 st.error(f"Error fetching detail for {selected_work}: {e}")

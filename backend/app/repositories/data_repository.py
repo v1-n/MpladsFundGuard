@@ -117,5 +117,9 @@ class DataRepository:
             self._clean_mp_df = pd.read_csv(p, low_memory=False)
         return self._clean_mp_df
 
+    def get_clean_df(self, filename: str) -> pd.DataFrame:
+        p = self._require_file(filename)
+        return pd.read_csv(p, low_memory=False)
+
 # Global repository instance
 data_repo = DataRepository()

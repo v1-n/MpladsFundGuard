@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     BASE_DIR: Path = BASE_DIR
     DATA_DIR: Path = BASE_DIR / "data"
     CLEAN_DATA_DIR: Path = BASE_DIR / "data" / "clean"
+    AUDIT_DB_PATH: Path = BASE_DIR / "data" / "manual_audit_reviews.db"
     
     # Server / Security
     HOST: str = "0.0.0.0"
@@ -25,6 +26,16 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
     ]
     LOG_LEVEL: str = "INFO"
+    
+    # Audit Security & Authentication
+    AUDIT_AUTH_ENABLED: bool = True
+    REVIEWER_TOKENS: dict[str, dict[str, str]] = {
+        "auditor-token-1": {"reviewer_id": "Auditor-1", "role": "reviewer"},
+        "auditor-token-2": {"reviewer_id": "Auditor-2", "role": "reviewer"},
+        "auditor-test-token": {"reviewer_id": "Auditor-Test-Alpha", "role": "reviewer"},
+        "auditor-beta-token": {"reviewer_id": "Auditor-Test-Beta", "role": "reviewer"},
+        "lead-admin-token": {"reviewer_id": "Lead-Auditor", "role": "admin"},
+    }
     
     # Pagination
     PAGE_SIZE_DEFAULT: int = 50

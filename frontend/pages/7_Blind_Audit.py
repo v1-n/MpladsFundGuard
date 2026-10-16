@@ -60,29 +60,42 @@ with tab_audit:
         empty_state("No audit sample available.")
         st.stop()
 
-    # Reviewer Identity for durable persistence
-    col_rev1, col_rev2 = st.columns([1, 2])
+    # Reviewer Authentication & Identity
+    col_rev1, col_rev2 = st.columns([1, 1])
     with col_rev1:
-        reviewer_id = st.text_input(
-            "Reviewer ID / Auditor Name",
-            value="Auditor-1",
-            help="Used to isolate and persist your review verdicts in backend storage",
+        auth_profile = st.selectbox(
+            "Reviewer Session / Identity",
+            options=["Auditor-1 (auditor-token-1)", "Auditor-2 (auditor-token-2)", "Lead-Auditor [Admin] (lead-admin-token)", "Custom Reviewer Token"],
+            index=0,
+            help="Authenticates your review session. Identity is derived directly by the backend from this credential.",
         )
     with col_rev2:
-        st.caption("Verdicts and observations are saved durably to the backend database under this Reviewer ID.")
+        if auth_profile == "Custom Reviewer Token":
+            reviewer_token = st.text_input("Enter Reviewer Auth Token", value="", type="password")
+        else:
+            token_map = {
+                "Auditor-1 (auditor-token-1)": "auditor-token-1",
+                "Auditor-2 (auditor-token-2)": "auditor-token-2",
+                "Lead-Auditor [Admin] (lead-admin-token)": "lead-admin-token",
+            }
+            reviewer_token = token_map.get(auth_profile, "auditor-token-1")
 
-    # Load previously persisted reviews for this reviewer from backend
+        st.caption(f"🔒 Authenticated Session Active • All review records durably stored in SQLite database.")
+
+    # Load previously persisted reviews for this authenticated reviewer from backend
     try:
-        saved_reviews_list = api_client.get_audit_reviews(reviewer_id=reviewer_id)
+        saved_reviews_list = api_client.get_audit_reviews(reviewer_token=reviewer_token)
         saved_reviews_map = {r["work_id"]: r for r in saved_reviews_list}
-    except Exception:
+        active_reviewer_id = saved_reviews_list[0]["reviewer_id"] if saved_reviews_list else auth_profile.split(" ")[0]
+    except Exception as e:
         saved_reviews_map = {}
+        active_reviewer_id = auth_profile.split(" ")[0]
 
     # Progress tracking
     completed_reviews = len(saved_reviews_map)
     st.progress(completed_reviews / len(sample_items))
     st.caption(
-        f"**Audit Progress for {reviewer_id}:** {completed_reviews} of {len(sample_items)} works reviewed "
+        f"**Audit Progress for {active_reviewer_id}:** {completed_reviews} of {len(sample_items)} works reviewed "
         f"({completed_reviews / len(sample_items) * 100:.1f}%)"
     )
 
@@ -135,11 +148,11 @@ with tab_audit:
             try:
                 api_client.submit_audit_review(
                     work_id=selected_id,
-                    reviewer_id=reviewer_id,
                     verdict=new_verdict,
                     notes=new_notes,
+                    reviewer_token=reviewer_token,
                 )
-                st.success(f"Verdict for `{selected_id}` saved durably under `{reviewer_id}`!")
+                st.success(f"Verdict for `{selected_id}` saved durably under `{active_reviewer_id}`!")
                 st.rerun()
             except APIError as e:
                 st.error(f"Error submitting review: {e.message}")
@@ -148,7 +161,7 @@ with tab_audit:
 
     # Current Review Sheet
     section_header(
-        title=f"Review Sheet & Export ({reviewer_id})",
+        title=f"Review Sheet & Export ({active_reviewer_id})",
         subtitle="Consolidated record of audited works with submitted verdicts",
     )
 

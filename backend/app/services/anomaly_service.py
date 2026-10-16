@@ -105,10 +105,17 @@ class AnomalyService:
             stage = str(r.get("Lifecycle_Stage", "Not Scored"))
             flag_cols = [c for c in master.columns if c.startswith("Flag_") or c.startswith("Missing_") or c.startswith("Integrity_")]
             flags_dict = {fc: int(r[fc]) for fc in flag_cols if pd.notna(r.get(fc))}
+            missing_photo = bool(r.get("Missing_Photo_Proof") == 1) if pd.notna(r.get("Missing_Photo_Proof")) else False
+            post_cutoff = bool(r.get("Post_Photo_Cutoff") == 1) if pd.notna(r.get("Post_Photo_Cutoff")) else False
+            if missing_photo:
+                photo_status = "NON-COMPLIANT (Post-April 2023 mandate, missing photo proof)" if post_cutoff else "EXEMPT (Pre-April 2023 sanction date, photo advisory only)"
+            else:
+                photo_status = "COMPLIANT (Photographic documentation uploaded)"
             return AnomalyDetail(
                 work_id=work_id,
                 stage=stage,
                 rank_in_stage=-1,
+                percentile_in_stage=None,
                 anomaly_score=0.0,
                 extreme_feature_indicators="Not scored (cohort has zero settled expenditure)",
                 top_anomalous_factors="Not scored (cohort has zero settled expenditure)",
@@ -137,6 +144,8 @@ class AnomalyService:
                 in_progress_count=int(r.get("In_Progress_Count", 0)),
                 vendors_count=int(r.get("Unique_Vendors_Count", 0)),
                 primary_vendor=str(r.get("Primary_Vendor", "Unknown")),
+                photo_compliance_status=photo_status,
+                portal_url="https://www.mplads.gov.in/",
                 rule_flags=flags_dict,
                 methodology_note="This work has zero settled payments and was excluded from ML anomaly scoring. Flags are derived strictly from deterministic ledger rules."
             )
@@ -150,11 +159,23 @@ class AnomalyService:
         
         ext_feat = str(r_sc.get("extreme_feature_indicators", ""))
         top_fac = str(r_sc.get("top_anomalous_factors", ext_feat))
+
+        total_in_stage = len(scores[scores["Stage"] == str(r_sc["Stage"])])
+        rank_val = int(r_sc["rank_in_stage"])
+        percentile_val = round((1.0 - (rank_val - 1) / max(1, total_in_stage)) * 100.0, 2)
+
+        missing_photo = bool(r_m.get("Missing_Photo_Proof") == 1) if pd.notna(r_m.get("Missing_Photo_Proof")) else False
+        post_cutoff = bool(r_m.get("Post_Photo_Cutoff") == 1) if pd.notna(r_m.get("Post_Photo_Cutoff")) else False
+        if missing_photo:
+            photo_status = "NON-COMPLIANT (Post-April 2023 mandate, missing photo proof)" if post_cutoff else "EXEMPT (Pre-April 2023 sanction date, photo advisory only)"
+        else:
+            photo_status = "COMPLIANT (Photographic documentation uploaded)"
         
         return AnomalyDetail(
             work_id=work_id,
             stage=str(r_sc["Stage"]),
-            rank_in_stage=int(r_sc["rank_in_stage"]),
+            rank_in_stage=rank_val,
+            percentile_in_stage=percentile_val,
             anomaly_score=float(round(r_sc["anomaly_score"], 4)),
             extreme_feature_indicators=ext_feat,
             top_anomalous_factors=top_fac,
@@ -183,6 +204,8 @@ class AnomalyService:
             in_progress_count=int(r_m.get("In_Progress_Count", 0)),
             vendors_count=int(r_m.get("Unique_Vendors_Count", 0)),
             primary_vendor=str(r_m.get("Primary_Vendor", "Unknown")),
+            photo_compliance_status=photo_status,
+            portal_url="https://www.mplads.gov.in/",
             rule_flags=flags_dict,
             methodology_note=(
                 "The anomaly score reflects multi-dimensional distance from peers using an Isolation Forest ensemble (10 seeds, max_samples=1024). "

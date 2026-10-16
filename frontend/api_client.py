@@ -178,21 +178,55 @@ class FundGuardAPIClient:
         r = self._get_client().get(f"{self.base_url}/audit/diagnostics")
         return self._handle_response(r).get("data", {})
 
-    def submit_audit_review(self, work_id: str, reviewer_id: str, verdict: str, notes: str = "") -> dict:
+    def submit_audit_review(
+        self,
+        work_id: str,
+        verdict: str,
+        notes: str = "",
+        reviewer_id: Optional[str] = None,
+        reviewer_token: Optional[str] = None,
+        **kwargs,
+    ) -> dict:
+        allowed_verdicts = {
+            "Normal / Regular",
+            "Irregularity / Suspicious",
+            "Inefficient / Incomplete",
+            "Inconsistent Data",
+        }
+        # Backward compatibility for positional (work_id, reviewer_id, verdict, notes)
+        if notes in allowed_verdicts:
+            actual_verdict = notes
+            actual_notes = kwargs.get("extra_notes", "")
+            actual_reviewer = verdict
+        else:
+            actual_verdict = verdict
+            actual_notes = notes
+            actual_reviewer = reviewer_id
+
         payload = {
             "work_id": work_id,
-            "reviewer_id": reviewer_id,
-            "verdict": verdict,
-            "notes": notes,
+            "verdict": actual_verdict,
+            "notes": actual_notes,
         }
-        r = self._get_client().post(f"{self.base_url}/audit/reviews", json=payload)
+        if actual_reviewer:
+            payload["reviewer_id"] = actual_reviewer
+
+        token = reviewer_token or os.getenv("AUDITOR_TOKEN", "auditor-token-1")
+        headers = {"Authorization": f"Bearer {token}"}
+        r = self._get_client().post(f"{self.base_url}/audit/reviews", json=payload, headers=headers)
         return self._handle_response(r).get("data", {})
 
-    def get_audit_reviews(self, reviewer_id: Optional[str] = None) -> list[dict]:
+    def get_audit_reviews(
+        self,
+        reviewer_id: Optional[str] = None,
+        reviewer_token: Optional[str] = None,
+    ) -> list[dict]:
         params = {}
         if reviewer_id:
             params["reviewer_id"] = reviewer_id
-        r = self._get_client().get(f"{self.base_url}/audit/reviews", params=params)
+        token = reviewer_token or os.getenv("AUDITOR_TOKEN", "auditor-token-1")
+        headers = {"Authorization": f"Bearer {token}"}
+        r = self._get_client().get(f"{self.base_url}/audit/reviews", params=params, headers=headers)
         return self._handle_response(r).get("data", {}).get("reviews", [])
 
 # Singleton instance for the frontend

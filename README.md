@@ -135,44 +135,54 @@ Run unit and integration tests across the backend, schemas, frontend client, and
 ```bash
 PYTHONPATH=. pytest -v
 ```
-**Verification Coverage (27 passed tests):**
+**Verification Coverage (49 passed tests):**
 - System health and disclaimer validation
-- Overview KPIs and zero-orphan integrity checks
+- Overview KPIs, dynamic pipeline provenance, and zero-orphan integrity checks
 - EDA distributions and missing-value endpoints
 - Data quality rules, flags, and pagination
 - State and category fund utilization
-- Multi-dimensional anomaly scoring and detailed dossiers
+- Multi-dimensional anomaly scoring and detailed traceable dossiers
 - Synthetic evaluation reproduction and limitation disclosure
 - **Strict Blind Audit Security:** Asserts answer key is never accessible, and verifies blind sample contains no score or cohort fields
+- **Audit Review Authorization & Session Isolation:** Enforces token authentication, prevents reviewer impersonation, and blocks cross-reviewer snooping
+- **SQLite ACID Persistence:** Guarantees concurrent write safety and transaction durability across server restarts
 - **Formula Injection Defense:** Verifies CSV export prepends single quotes to dangerous leading characters (`=`, `+`, `-`, `@`, `\t`, `\r`)
 - **Missing Artifacts Behavior:** Verifies 503 response code with exact rebuild instructions
+- **Streamlit Smoke Testing:** Tests all application pages load without errors via `streamlit.testing.v1.AppTest`
 
 ---
 
 ## 📊 Summary of Findings
 
-- **84,271 Unique Works** in master dataset across 543 Lok Sabha constituencies
+- **~212,000 Raw MoSPI Records** ingested across raw tables
+- **84,271 Unique Works** in master 360° dataset across 543 Lok Sabha constituencies
+- **58,050 Scored Works** in active ML matrix (works with non-zero disbursements)
+- **Monetary Reconciliation:** ₹44,515,171,891.91 sanctioned budget and ₹28,645,709,664.45 settled disbursements verified with ₹0.00 discrepancy between line-item expenditure tables and 360 master table
 - **454 Duplicate Payment works** detected in transaction records
 - **12,529 Same-Day Bulk Payment works** (split disbursements ≤₹5L)
 - **75 Ghost Completions** (marked completed with ₹0 settled and ₹0 pending expenditure)
-- **21 Post-Cutoff Missing Photos** (completions after May 2026 lacking required photo evidence)
+- **21 Post-Cutoff Missing Photos** (completions lacking required photographic proof)
 - **10,687 Stalled Unpaid Works** (>180 days idle since sanction)
 
 ### ML Benchmark Metrics (Completed Works Cohort)
 - **Seed Stability:** Top-300 Jaccard similarity of **0.9355** (Completed) and **0.9672** (In-Progress) across 10 random seeds.
-- **Held-Out Synthetic ROC-AUC:** **0.870 ± 0.004** (vs 0.790 for Robust Z-Score baseline).
-- **Precision @ 2% Top-Ranked:** **19.9% ± 2.3%** (~7.4× lift over 2.7% base rate).
+- **Held-Out Synthetic ROC-AUC:** **0.870 ± 0.004** against 5-trial held-out synthetic anomaly injections (vs 0.790 for Robust Z-Score baseline).
+- **Precision @ 2% Top-Ranked:** **19.9% ± 2.3%** (~7.4× lift over 2.7% synthetic perturbation base rate).
 - **Clean Baseline Agreement:** 64.7% overlap (194/300) with non-parametric Robust Z baseline.
 - **Matched-Control Blind Audit:** 100-work balanced sample (50 top-ranked vs 50 matched controls ranked >300).
+- **Evaluation Disclaimer:** Evaluated exclusively on synthetic held-out perturbations and stability metrics; no assertions of real-world fraud accuracy are made without human ground-truth labels.
 
 ---
 
 ## 🛡️ Security & Privacy Practices
 
-1. **PII Protection:** Phone numbers and sensitive contact details in raw portal extracts are dynamically masked during ingestion. Raw data files are gitignored.
-2. **Audit Integrity:** Answer keys (`manual_audit_sample_key.csv`) are strictly quarantined from all API endpoints and frontend views to guarantee unbiased manual review.
-3. **Spreadsheet Security:** All CSV downloads neutralize spreadsheet formula injection vulnerabilities (`=`, `+`, `-`, `@`, `\t`, `\r`).
-4. **Data Isolation:** Fresh clones without generated data receive HTTP 503 errors pointing to `python -m src.rebuild` without exposing internal filesystem paths.
+1. **Authenticated Audit Reviews:** Review submissions and retrieval require authentication (`Authorization: Bearer <token>` or `X-Reviewer-Token`). Reviewer identity is derived securely from the authenticated session to eliminate client-side impersonation.
+2. **Review Data Isolation:** Reviewers are restricted to viewing only their own submitted assessments; cross-reviewer data snooping is blocked (admin token required for global export).
+3. **Transactional SQLite Storage:** Reviews are persisted in SQLite with WAL mode (`data/manual_audit_reviews.db`) with ACID transaction semantics, eliminating race conditions and flat-file corruption.
+4. **PII Protection:** Phone numbers and sensitive contact details in raw portal extracts are dynamically masked during ingestion. Raw data files are gitignored.
+5. **Audit Integrity:** Answer keys (`manual_audit_sample_key.csv`) are strictly quarantined from all API endpoints and frontend views to guarantee unbiased manual review.
+6. **Spreadsheet Security:** All CSV downloads neutralize spreadsheet formula injection vulnerabilities (`=`, `+`, `-`, `@`, `\t`, `\r`).
+7. **Data Isolation:** Fresh clones without generated data receive HTTP 503 errors pointing to `python -m src.rebuild` without exposing internal filesystem paths.
 
 ---
 

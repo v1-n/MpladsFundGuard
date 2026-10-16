@@ -25,6 +25,7 @@ class AnomalyDetail(BaseModel):
     work_id: str
     stage: str
     rank_in_stage: int
+    percentile_in_stage: Optional[float] = None
     anomaly_score: float
     extreme_feature_indicators: str
     top_anomalous_factors: str
@@ -53,5 +54,7 @@ class AnomalyDetail(BaseModel):
     in_progress_count: int
     vendors_count: int
     primary_vendor: str
+    photo_compliance_status: Optional[str] = None
+    portal_url: str = "https://www.mplads.gov.in/"
     rule_flags: dict[str, int]
     methodology_note: str

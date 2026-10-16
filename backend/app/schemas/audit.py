@@ -30,7 +30,7 @@ class MatchingDiagnosticsResponse(BaseModel):
 
 class AuditReviewSubmission(BaseModel):
     work_id: str = Field(..., min_length=3, max_length=150, description="Unique Work ID")
-    reviewer_id: str = Field(..., min_length=2, max_length=100, description="Reviewer identifier or name")
+    reviewer_id: Optional[str] = Field(default=None, max_length=100, description="Optional reviewer ID; derived from authenticated session if omitted.")
     verdict: str = Field(..., description="Audit verdict: Normal / Regular, Irregularity / Suspicious, Inefficient / Incomplete, Inconsistent Data")
     notes: Optional[str] = Field(default="", max_length=5000, description="Reviewer findings and observations")
 

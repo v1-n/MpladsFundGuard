@@ -36,6 +36,11 @@ def test_anomaly_detail_existing(client):
     assert "installments_count" in detail
     assert "primary_vendor" in detail
     assert "methodology_note" in detail
+    assert "portal_url" in detail
+    assert "photo_compliance_status" in detail
+    assert "percentile_in_stage" in detail
+    assert detail["portal_url"].startswith("http")
+    assert detail["percentile_in_stage"] is not None
 
 def test_anomaly_detail_not_found(client):
     response = client.get("/api/v1/anomalies/NON_EXISTENT_WORK_ID_12345")

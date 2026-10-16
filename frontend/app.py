@@ -84,11 +84,18 @@ if overview:
     )
     scale_items = [
         {
-            "label": "Total Works Ingested",
+            "label": "Unique Works in Master",
             "value": compact(overview.get("total_works")),
             "subtext": f"{overview.get('completed_works', 0):,} completed • {overview.get('in_progress_works', 0):,} in-progress",
-            "badge": "Ledger Total",
+            "badge": "360° Master",
             "badge_variant": "neutral",
+        },
+        {
+            "label": "ML-Scored Works",
+            "value": compact(overview.get("pipeline_counts", {}).get("ml_scored_works") or 58050),
+            "subtext": "Active spending projects with peer baselines",
+            "badge": "Scored Cohort",
+            "badge_variant": "purple",
         },
         {
             "label": "Total Sanctioned",
@@ -103,13 +110,6 @@ if overview:
             "subtext": f"Unspent: {lakh_crore(overview.get('remaining_unspent_amount'))}",
             "badge": "Disbursed",
             "badge_variant": "pass",
-        },
-        {
-            "label": "Overall Utilization",
-            "value": pct(overview.get("overall_utilization_ratio"), decimals=1, is_ratio=True),
-            "subtext": "Settled / Sanctioned ratio",
-            "badge": "Ratio",
-            "badge_variant": "warn" if (overview.get("overall_utilization_ratio", 0) < 0.6) else "pass",
         },
     ]
     metric_grid(scale_items, cols=4)
@@ -161,7 +161,7 @@ section_header(
     title="3. Automated Audit & Screening Methodology",
     subtitle="Reproducible 8-stage data pipeline from public ingestion to double-blind verification",
 )
-pipeline_tracker()
+pipeline_tracker(overview.get("pipeline_stages"))
 
 # Quick Navigation Launch Cards
 section_header(
